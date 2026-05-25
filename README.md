@@ -10,7 +10,7 @@ pip install -e ".[dev]"
 
 ## 配置
 
-复制 `config.yaml.example` 为 `config.yaml`，编辑模型和后端信息：
+复制 `config.yaml.example` 为 `config.yaml`（已加入 `.gitignore`），编辑模型和后端信息：
 
 ```yaml
 server:
@@ -103,6 +103,8 @@ curl http://0.0.0.0:8080/embeddings \
 
 ### Anthropic 兼容端点
 
+支持 `/messages` 和 `/v1/messages`（兼容 Claude Code 等默认带 `/v1` 前缀的客户端）。
+
 **Messages (非流式):**
 
 ```bash
@@ -139,7 +141,7 @@ curl http://0.0.0.0:8080/messages \
 | `/chat/completions` | POST | OpenAI 兼容对话接口 |
 | `/models` | GET | 列出可用 OpenAI 兼容模型 |
 | `/embeddings` | POST | OpenAI 兼容向量接口 |
-| `/messages` | POST | Anthropic 兼容对话接口 |
+| `/messages`、`/v1/messages` | POST | Anthropic 兼容对话接口 |
 
 ## 运行测试
 
