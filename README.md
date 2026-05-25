@@ -134,10 +134,24 @@ curl http://0.0.0.0:8080/messages \
   }'
 ```
 
+**主页（状态面板）:**
+
+```bash
+curl http://0.0.0.0:8080/
+```
+
+访问 `/` 返回 HTML 页面，展示：
+- 运行时间、总请求数、模型组数
+- 模型配置表（名称、后端、API Key 状态）
+- 使用统计表（请求数、输入/输出 token、缓存命中/写入、平均延迟）
+
+流式和非流式请求均记录统计。OpenAI 端点的缓存命中从 `usage.prompt_tokens_details.cached_tokens` 提取，Anthropic 端点的缓存命中/写入从 `usage.cache_read_input_tokens` / `usage.cache_creation_input_tokens` 提取。
+
 ## 端点一览
 
 | 端点 | 方法 | 说明 |
 |---|---|---|
+| `/` | GET | 主页，展示配置和使用统计 |
 | `/chat/completions` | POST | OpenAI 兼容对话接口 |
 | `/models` | GET | 列出可用 OpenAI 兼容模型 |
 | `/embeddings` | POST | OpenAI 兼容向量接口 |

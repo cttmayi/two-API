@@ -2,9 +2,12 @@ import json
 import time
 import httpx
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from src.router import ModelRouter
-from src.forwarder import forward_non_stream, forward_stream
+from src.forwarder import (
+    forward_non_stream, get_forward_client, _prepare_headers,
+    _build_backend_url,
+)
 from src.logging_setup import get_logger
 from src.stats import get_stats
 
@@ -43,7 +46,64 @@ async def chat_completions(request: Request):
 
     try:
         if streaming:
-            return await forward_stream(request, entry.openai_base_url, entry.api_key, body=body_bytes, )
+            backend_url = entry.openai_base_url
+            api_key = entry.api_key
+
+            async def stream_with_stats():
+                url = _build_backend_url(backend_url, request.url.path, request.url.query)
+                req_headers = _prepare_headers(dict(request.headers), api_key)
+                client = get_forward_client()
+                status_code = 200
+                sse_lines: list[str] = []
+                partial = ""
+                async with client.stream(
+                    method=request.method, url=url, headers=req_headers,
+                    content=body_bytes,
+                ) as resp:
+                    status_code = resp.status_code
+                    async for chunk in resp.aiter_bytes():
+                        yield chunk
+                        text = chunk.decode("utf-8", errors="replace")
+                        partial += text
+                        while "\n" in partial:
+                            line, partial = partial.split("\n", 1)
+                            line = line.rstrip("\r")
+                            if line:
+                                sse_lines.append(line)
+
+                latency_ms = int((time.perf_counter() - start) * 1000)
+                prompt_tokens = None
+                completion_tokens = None
+                cache_read_tokens = None
+                for line in reversed(sse_lines):
+                    if line.startswith("data:"):
+                        data_str = line[5:].strip()
+                        if data_str == "[DONE]":
+                            continue
+                        try:
+                            data = json.loads(data_str)
+                            usage = data.get("usage", {})
+                            if usage:
+                                prompt_tokens = usage.get("prompt_tokens")
+                                completion_tokens = usage.get("completion_tokens")
+                                cache_read_tokens = usage.get("prompt_tokens_details", {}).get("cached_tokens")
+                                break
+                        except (json.JSONDecodeError, UnicodeDecodeError):
+                            pass
+
+                logger.info(
+                    "proxy_request",
+                    model=model_name, provider="openai",
+                    backend=backend_url, method=request.method,
+                    path=request.url.path, latency_ms=latency_ms,
+                    status=status_code,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                )
+                get_stats().record(model_name, "openai", prompt_tokens, completion_tokens,
+                                   latency_ms, cache_read_tokens=cache_read_tokens)
+
+            return StreamingResponse(stream_with_stats(), media_type="text/event-stream")
         else:
             resp = await forward_non_stream(request, entry.openai_base_url, entry.api_key, body=body_bytes, )
             latency_ms = int((time.perf_counter() - start) * 1000)

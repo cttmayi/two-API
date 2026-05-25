@@ -130,7 +130,8 @@ Backend request:  POST https://api.openai.com/v1/chat/completions
 ### Endpoint Exposure
 
 - OpenAI endpoints: `/chat/completions`, `/models`, `/embeddings`
-- Anthropic endpoints: `/messages`
+- Anthropic endpoints: `/messages`, `/v1/messages`
+- `GET /` serves an HTML homepage showing config summary and per-model usage statistics
 - `/models` on the OpenAI side only lists models with `openai_base_url` configured
 
 ## Request Forwarding
@@ -143,8 +144,8 @@ Backend request:  POST https://api.openai.com/v1/chat/completions
 
 ### Streaming
 
-- httpx `stream()` with `aiter_bytes()` — each chunk yielded directly to the client
-- SSE boundaries (`data: ...\n\n`) align naturally with chunk boundaries
+- httpx `stream()` with `aiter_bytes()` — each chunk yielded directly to the client, SSE lines accumulated for usage extraction
+- After stream ends, usage (including cache tokens) is extracted from SSE `data:` lines and recorded
 - Timeout: 300 seconds to cover long conversations and reasoning models
 
 ## Error Handling
@@ -175,12 +176,16 @@ Each request logs one JSON line containing:
   "latency_ms": 1234,
   "status": 200,
   "prompt_tokens": 150,
-  "completion_tokens": 80
+  "completion_tokens": 80,
+  "cache_read_tokens": 3120,
+  "cache_write_tokens": 0
 }
 ```
 
 - **Non-streaming**: Logged once after response completes. Token counts parsed from response body.
-- **Streaming**: Latency and status logged when stream ends. Token usage extracted from the last chunk containing `usage`. Set to `null` if unavailable.
+- **Streaming**: Latency, status, and token usage logged when stream ends. Usage merged from multiple SSE events (e.g., Anthropic's `message_start` provides input tokens and cache, `message_delta` provides output tokens).
+- **Cache tokens**: OpenAI extracts `cached_tokens` from `prompt_tokens_details`; Anthropic extracts `cache_read_input_tokens` and `cache_creation_input_tokens` from usage.
+- **Stats**: All requests (streaming and non-streaming) recorded in-memory via `Stats`, viewable on the `GET /` homepage.
 - **Startup**: Creates a new log file named `logs/<YYYY-MM-DD_HH-MM-SS>.log` at process start.
 - **Dual output**: JSON lines to file, human-readable to stdout.
 
