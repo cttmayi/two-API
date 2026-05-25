@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from src.router import ModelRouter
 from src.forwarder import forward_non_stream, forward_stream
 from src.logging_setup import get_logger
+from src.stats import get_stats
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -49,11 +50,13 @@ async def chat_completions(request: Request):
 
             prompt_tokens = None
             completion_tokens = None
+            cache_read_tokens = None
             try:
                 resp_body = json.loads(resp.body)
                 usage = resp_body.get("usage", {})
                 prompt_tokens = usage.get("prompt_tokens")
                 completion_tokens = usage.get("completion_tokens")
+                cache_read_tokens = usage.get("prompt_tokens_details", {}).get("cached_tokens")
             except (json.JSONDecodeError, UnicodeDecodeError):
                 pass
 
@@ -69,6 +72,8 @@ async def chat_completions(request: Request):
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
             )
+            get_stats().record(model_name, "openai", prompt_tokens, completion_tokens, latency_ms,
+                               cache_read_tokens=cache_read_tokens)
             return resp
     except httpx.ConnectError:
         return JSONResponse(status_code=502, content={"error": "Backend unreachable"})

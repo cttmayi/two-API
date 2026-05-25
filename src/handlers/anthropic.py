@@ -5,6 +5,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from src.forwarder import forward_non_stream, forward_stream
 from src.logging_setup import get_logger
+from src.stats import get_stats
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -49,11 +50,15 @@ async def messages(request: Request):
 
             input_tokens = None
             output_tokens = None
+            cache_read_tokens = None
+            cache_write_tokens = None
             try:
                 resp_body = json.loads(resp.body)
                 usage = resp_body.get("usage", {})
                 input_tokens = usage.get("input_tokens")
                 output_tokens = usage.get("output_tokens")
+                cache_read_tokens = usage.get("cache_read_input_tokens")
+                cache_write_tokens = usage.get("cache_creation_input_tokens")
             except (json.JSONDecodeError, UnicodeDecodeError):
                 pass
 
@@ -69,6 +74,9 @@ async def messages(request: Request):
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
             )
+            get_stats().record(model_name, "anthropic", input_tokens, output_tokens, latency_ms,
+                               cache_read_tokens=cache_read_tokens,
+                               cache_write_tokens=cache_write_tokens)
             return resp
     except httpx.ConnectError:
         return JSONResponse(status_code=502, content={"error": "Backend unreachable"})
