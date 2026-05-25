@@ -6,7 +6,7 @@ A transparent LLM API proxy that accepts OpenAI-compatible and Anthropic-compati
 
 ## Requirements
 
-- **Dual API support**: OpenAI-compatible endpoints (`/v1/chat/completions`, `/v1/models`, etc.) and Anthropic-compatible endpoints (`/v1/messages`, etc.)
+- **Dual API support**: OpenAI-compatible endpoints (`/chat/completions`, `/models`, `/embeddings`) and Anthropic-compatible endpoints (`/messages`)
 - **Transparent proxy**: Requests and responses keep their original format; no format translation
 - **Model-based routing**: The `model` field in the request body determines the backend
 - **Mixed backends**: Public cloud APIs and self-hosted instances, configured per model
@@ -65,23 +65,27 @@ models:
   - names:
       - gpt-4o
       - gpt-4o-mini
-    openai_base_url: https://api.openai.com
+    openai_base_url: https://api.openai.com/v1
     api_key: sk-xxx
 
   - names:
       - claude-sonnet-4-6
-    anthropic_base_url: https://api.anthropic.com
+    anthropic_base_url: https://api.anthropic.com/v1
     api_key: sk-ant-xxx
 
   - names:
       - deepseek-chat
-    openai_base_url: https://api.deepseek.com
-    anthropic_base_url: https://api.deepseek.com/anthropic
+    openai_base_url: https://api.deepseek.com/v1
     api_key: sk-xxx
 
   - names:
+      - glm-5.1
+    openai_base_url: https://ark.cn-beijing.volces.com/api/v3
+    api_key: ark-xxx
+
+  - names:
       - local-llama
-    openai_base_url: http://localhost:8000
+    openai_base_url: http://localhost:8080/v1
 
 logging:
   level: INFO
@@ -112,23 +116,29 @@ logging:
 The proxy's request path is appended to the matched `base_url`. Example:
 
 ```
-Proxy receives:  POST /v1/chat/completions  (model: deepseek-chat)
-Matched base_url: https://api.deepseek.com
-Backend request:  POST https://api.deepseek.com/v1/chat/completions
+Proxy receives:  POST /chat/completions  (model: glm-5.1)
+Matched base_url: https://ark.cn-beijing.volces.com/api/v3
+Backend request:  POST https://ark.cn-beijing.volces.com/api/v3/chat/completions
+```
+
+For OpenAI official API, configure `openai_base_url: https://api.openai.com/v1` to get:
+```
+Proxy receives:  POST /chat/completions
+Backend request:  POST https://api.openai.com/v1/chat/completions
 ```
 
 ### Endpoint Exposure
 
-- OpenAI endpoints under `/v1/`: `/v1/chat/completions`, `/v1/models`, `/v1/embeddings`
-- Anthropic endpoints under `/v1/`: `/v1/messages`
-- `/v1/models` on each endpoint type only lists models with the corresponding `base_url` configured
+- OpenAI endpoints: `/chat/completions`, `/models`, `/embeddings`
+- Anthropic endpoints: `/messages`
+- `/models` on the OpenAI side only lists models with `openai_base_url` configured
 
 ## Request Forwarding
 
 ### Header Handling
 
 - **Pass through**: `Content-Type`, `Accept`, and most client headers
-- **Strip**: `Host`, `Transfer-Encoding`, `Connection` (hop-by-hop headers)
+- **Strip**: `Host`, `Transfer-Encoding`, `Connection`, `Content-Length`, `Content-Encoding`, and other hop-by-hop headers. `Content-Length` and `Content-Encoding` are stripped from responses because httpx auto-decodes compressed bodies, making the original values invalid.
 - **Inject**: `Authorization: Bearer <api_key>` if `api_key` is configured on the matched entry
 
 ### Streaming
@@ -161,7 +171,7 @@ Each request logs one JSON line containing:
   "provider": "openai",
   "backend": "https://api.deepseek.com",
   "method": "POST",
-  "path": "/v1/chat/completions",
+  "path": "/chat/completions",
   "latency_ms": 1234,
   "status": 200,
   "prompt_tokens": 150,
