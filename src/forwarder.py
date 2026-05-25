@@ -12,6 +12,8 @@ HOP_BY_HOP_HEADERS = {
     "upgrade",
     "proxy-authenticate",
     "proxy-authorization",
+    "content-length",
+    "content-encoding",
 }
 
 _forward_client: httpx.AsyncClient | None = None
