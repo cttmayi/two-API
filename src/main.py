@@ -44,7 +44,6 @@ async def homepage(request: Request):
 
     config_rows = ""
     for entry in config.models:
-        names = "".join(f'<span class="model-name-item">{name}</span>' for name in entry.names)
         backends = []
         if entry.openai_base_url:
             backends.append(f'<span class="proto-tag">OpenAI</span> {entry.openai_base_url}')
@@ -52,9 +51,12 @@ async def homepage(request: Request):
             backends.append(f'<span class="proto-tag">Anthropic</span> {entry.anthropic_base_url}')
         backends_html = "<br>".join(backends) if backends else "&mdash;"
         has_key = '<span class="tag tag-yes">Yes</span>' if entry.api_key else '<span class="tag tag-no">No</span>'
-        config_rows += f"""
+        for client_name, backend_name in entry.get_name_map().items():
+            same = "same" if client_name == backend_name else ""
+            config_rows += f"""
         <tr>
-            <td class="model-names">{names}</td>
+            <td class="model-name-cell">{client_name}</td>
+            <td class="backend-name-cell {same}">{backend_name}</td>
             <td class="backend-cell">{backends_html}</td>
             <td class="key-cell">{has_key}</td>
         </tr>"""
@@ -163,27 +165,27 @@ header .subtitle {{ color: #999; font-size: 0.85rem; margin-top: 0.15rem; }}
     padding: 11px 20px;
     text-align: left;
 }}
-.config-table th:first-child {{ width: 22%; }}
-.config-table th:last-child {{ width: 10%; }}
+.config-table th:first-child {{ width: 18%; }}
+.config-table th:nth-child(2) {{ width: 18%; }}
+.config-table th:last-child {{ width: 9%; }}
 .config-table td {{
     padding: 14px 20px;
     border-top: 1px solid #f0f0f3;
     vertical-align: middle;
 }}
 .config-table tr:hover td {{ background: #fafbfd; }}
-.model-names {{
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}}
-.model-name-item {{
-    background: #eef2ff;
-    color: #3b5ccc;
+.model-name-cell {{
     font-weight: 600;
-    font-size: 0.85rem;
-    padding: 3px 10px;
-    border-radius: 6px;
-    white-space: nowrap;
+    font-size: 0.9rem;
+    color: #1a1a2e;
+}}
+.backend-name-cell {{
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    font-size: 0.82rem;
+    color: #333;
+}}
+.backend-name-cell.same {{
+    color: #bbb;
 }}
 .backend-cell {{
     font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
@@ -311,7 +313,7 @@ footer {{
 <div class="section">
     <div class="section-title">Model Configuration</div>
     <table class="config-table">
-    <thead><tr><th>Model Names</th><th>Backend URLs</th><th>API Key</th></tr></thead>
+    <thead><tr><th>Model Name</th><th>Backend Name</th><th>Backend URLs</th><th>API Key</th></tr></thead>
     <tbody>{config_rows}</tbody>
     </table>
 </div>
