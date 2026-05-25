@@ -51,14 +51,19 @@ async def homepage(request: Request):
             backends.append(f'<span class="proto-tag">Anthropic</span> {entry.anthropic_base_url}')
         backends_html = "<br>".join(backends) if backends else "&mdash;"
         has_key = '<span class="tag tag-yes">Yes</span>' if entry.api_key else '<span class="tag tag-no">No</span>'
-        for client_name, backend_name in entry.get_name_map().items():
+        name_pairs = list(entry.get_name_map().items())
+        rowspan = len(name_pairs)
+        for i, (client_name, backend_name) in enumerate(name_pairs):
             same = "same" if client_name == backend_name else ""
             config_rows += f"""
         <tr>
             <td class="model-name-cell">{client_name}</td>
-            <td class="backend-name-cell {same}">{backend_name}</td>
-            <td class="backend-cell">{backends_html}</td>
-            <td class="key-cell">{has_key}</td>
+            <td class="backend-name-cell {same}">{backend_name}</td>"""
+            if i == 0:
+                config_rows += f"""
+            <td class="backend-cell" rowspan="{rowspan}">{backends_html}</td>
+            <td class="key-cell" rowspan="{rowspan}">{has_key}</td>"""
+            config_rows += """
         </tr>"""
 
     stats_cards = ""
