@@ -14,6 +14,7 @@ def _get_router(request: Request):
     return request.app.state.router
 
 
+@router.post("/v1/messages")
 @router.post("/messages")
 async def messages(request: Request):
     body_bytes = await request.body()
