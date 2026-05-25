@@ -49,6 +49,17 @@ logging:
 
 ## 运行
 
+安装后通过 CLI 启动：
+
+```bash
+pip install -e .
+two-api                    # 默认读取 ./config.yaml
+two-api /path/to/config.yaml
+two-api --host 127.0.0.1 --port 9000
+```
+
+或直接用 uvicorn：
+
 ```bash
 uvicorn src.main:app --host 0.0.0.0 --port 8080
 ```
