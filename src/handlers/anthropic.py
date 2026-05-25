@@ -41,9 +41,9 @@ async def messages(request: Request):
 
     try:
         if streaming:
-            return await forward_stream(request, entry.anthropic_base_url, entry.api_key, body=body_bytes)
+            return await forward_stream(request, entry.anthropic_base_url, entry.api_key, body=body_bytes, strip_path_prefix=entry.strip_path_prefix)
         else:
-            resp = await forward_non_stream(request, entry.anthropic_base_url, entry.api_key, body=body_bytes)
+            resp = await forward_non_stream(request, entry.anthropic_base_url, entry.api_key, body=body_bytes, strip_path_prefix=entry.strip_path_prefix)
             latency_ms = int((time.perf_counter() - start) * 1000)
 
             input_tokens = None
