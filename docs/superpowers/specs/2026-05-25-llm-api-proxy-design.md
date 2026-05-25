@@ -95,7 +95,10 @@ logging:
 
 ### Field Rules
 
-- `names`: Array of model names sharing the same backend. At least one required.
+- `names`: Array of model names sharing the same backend. Each item can be:
+  - A plain string (e.g., `gpt-4o`): client and backend use the same name.
+  - An alias mapping (e.g., `fast: gpt-4o-mini`): client requests "fast", proxy forwards "gpt-4o-mini" to backend.
+  - Mixed in the same list. At least one required.
 - `openai_base_url` / `anthropic_base_url`: At least one must be configured per entry.
 - `api_key`: Optional. If omitted, forwarded requests carry no `Authorization` header.
 - `logging.output`: `file` — writes JSON lines to a timestamped file (e.g., `./logs/2026-05-25_14-30-00.log`). Stdout always receives human-readable output for development.

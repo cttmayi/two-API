@@ -17,6 +17,12 @@ models:
     anthropic_base_url: https://api.anthropic.com/v1
     api_key: sk-ant-your-anthropic-key
 
+  # 模型别名: 客户端用 "fast" 请求, 代理转发为 "gpt-4o-mini"
+  - names:
+      - fast: gpt-4o-mini
+    openai_base_url: https://api.openai.com/v1
+    api_key: sk-your-openai-key
+
   # DeepSeek (OpenAI 兼容)
   - names:
       - deepseek-chat

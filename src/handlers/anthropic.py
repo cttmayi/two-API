@@ -32,14 +32,19 @@ async def messages(request: Request):
         return JSONResponse(status_code=400, content={"error": "Missing 'model' field"})
 
     model_router = _get_router(request)
-    entry = model_router.match(model_name, "anthropic")
-    if entry is None:
+    match_result = model_router.match(model_name, "anthropic")
+    if match_result is None:
         if model_router.match(model_name, "openai"):
             return JSONResponse(
                 status_code=404,
                 content={"error": f"Model '{model_name}' not available on this endpoint"},
             )
         return JSONResponse(status_code=404, content={"error": f"Unknown model: {model_name}"})
+
+    entry, backend_model = match_result
+    if backend_model != model_name:
+        body_json["model"] = backend_model
+        body_bytes = json.dumps(body_json).encode("utf-8")
 
     start = time.perf_counter()
     streaming = body_json.get("stream", False)

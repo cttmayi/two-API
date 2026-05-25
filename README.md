@@ -31,11 +31,11 @@ models:
     anthropic_base_url: https://api.anthropic.com/v1
     api_key: sk-ant-your-anthropic-key
 
-  # 火山方舟 (OpenAI 兼容)
+  # 模型别名: 客户端用 "fast" 请求, 代理转发 "gpt-4o-mini"
   - names:
-      - glm-5.1
-    openai_base_url: https://ark.cn-beijing.volces.com/api/v3
-    api_key: ark-your-key
+      - fast: gpt-4o-mini
+    openai_base_url: https://api.openai.com/v1
+    api_key: sk-your-openai-key
 
 logging:
   level: INFO
@@ -43,7 +43,9 @@ logging:
   dir: ./logs
 ```
 
-- `names`: 模型名列表，匹配请求 body 中的 `model` 字段
+- `names`: 模型名列表，匹配请求 body 中的 `model` 字段。支持两种格式：
+  - 普通字符串 `gpt-4o`：客户端和后台用同一个模型名
+  - 别名映射 `fast: gpt-4o-mini`：客户端用 `"fast"` 请求，代理转发为 `"gpt-4o-mini"`
 - `openai_base_url` / `anthropic_base_url`: 至少配置一个，代理将请求路径拼接到此 URL
 - `api_key`: 可选，配置后将作为 `Authorization: Bearer <key>` 注入到后端请求
 

@@ -32,6 +32,11 @@ class TestModelEntry:
         entry = ModelEntry(names=["local"], openai_base_url="http://localhost:8000")
         assert entry.api_key is None
 
+    def test_alias_names(self):
+        entry = ModelEntry(names=[{"fast": "gpt-4o-mini"}, "gpt-4o"], openai_base_url="https://api.openai.com")
+        assert entry.get_name_map() == {"fast": "gpt-4o-mini", "gpt-4o": "gpt-4o"}
+        assert sorted(entry.client_names) == sorted(["fast", "gpt-4o"])
+
 
 class TestServerConfig:
     def test_defaults(self):
