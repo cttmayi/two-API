@@ -27,42 +27,74 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 
+def _fmt(n: int | None) -> str:
+    if n is None or n == 0:
+        return "0"
+    if n >= 1_000_000:
+        return f"{n/1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n/1_000:.1f}K"
+    return str(n)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def homepage(request: Request):
     config = request.app.state.config
     stats = __import__("src.stats", fromlist=["get_stats"]).get_stats().snapshot()
 
-    models_html = ""
+    config_rows = ""
     for entry in config.models:
-        names = ", ".join(entry.names)
+        names = "".join(f'<span class="model-name-item">{name}</span>' for name in entry.names)
         backends = []
         if entry.openai_base_url:
-            backends.append(f"OpenAI: {entry.openai_base_url}")
+            backends.append(f'<span class="proto-tag">OpenAI</span> {entry.openai_base_url}')
         if entry.anthropic_base_url:
-            backends.append(f"Anthropic: {entry.anthropic_base_url}")
-        backend_str = "<br>".join(backends)
-        has_key = "Yes" if entry.api_key else "No"
-        models_html += f"""
+            backends.append(f'<span class="proto-tag">Anthropic</span> {entry.anthropic_base_url}')
+        backends_html = "<br>".join(backends) if backends else "&mdash;"
+        has_key = '<span class="tag tag-yes">Yes</span>' if entry.api_key else '<span class="tag tag-no">No</span>'
+        config_rows += f"""
         <tr>
-            <td>{names}</td>
-            <td>{backend_str}</td>
-            <td>{has_key}</td>
+            <td class="model-names">{names}</td>
+            <td class="backend-cell">{backends_html}</td>
+            <td class="key-cell">{has_key}</td>
         </tr>"""
 
-    stats_rows = ""
+    stats_cards = ""
     for name, m in stats.get("models", {}).items():
         avg_lat = m["total_latency_ms"] / m["requests"] if m["requests"] else 0
-        stats_rows += f"""
-        <tr>
-            <td>{name}</td>
-            <td>{m["provider"]}</td>
-            <td>{m["requests"]}</td>
-            <td>{m["prompt_tokens"]}</td>
-            <td>{m["completion_tokens"]}</td>
-            <td>{m["cache_read_tokens"]}</td>
-            <td>{m["cache_write_tokens"]}</td>
-            <td>{avg_lat:.0f}</td>
-        </tr>"""
+        stats_cards += f"""
+        <div class="model-card">
+            <div class="model-card-header">
+                <span class="model-name">{name}</span>
+                <span class="model-provider">{m["provider"]}</span>
+            </div>
+            <div class="model-card-body">
+                <div class="metric">
+                    <span class="metric-value">{m["requests"]}</span>
+                    <span class="metric-label">Requests</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-value">{_fmt(m["prompt_tokens"])}</span>
+                    <span class="metric-label">Prompt Tokens</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-value">{_fmt(m["completion_tokens"])}</span>
+                    <span class="metric-label">Completion Tokens</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-value">{_fmt(m["cache_read_tokens"])}</span>
+                    <span class="metric-label">Cache Read</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-value">{_fmt(m["cache_write_tokens"])}</span>
+                    <span class="metric-label">Cache Write</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-value">{avg_lat:.0f}<span class="metric-unit"> ms</span></span>
+                    <span class="metric-label">Avg Latency</span>
+                </div>
+            </div>
+        </div>"""
 
     uptime_m = stats["uptime_seconds"] // 60
     uptime_s = stats["uptime_seconds"] % 60
@@ -71,40 +103,228 @@ async def homepage(request: Request):
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>two-API Proxy</title>
 <style>
-body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 960px; margin: 0 auto; padding: 2rem; background: #f5f5f5; }}
-h1 {{ color: #333; }}
-h2 {{ color: #555; margin-top: 2rem; }}
-table {{ width: 100%; border-collapse: collapse; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
-th, td {{ padding: 10px 14px; text-align: left; border-bottom: 1px solid #eee; }}
-th {{ background: #fafafa; font-weight: 600; }}
-tr:hover {{ background: #f9f9f9; }}
-.stat {{ display: inline-block; margin: 0 2rem 1rem 0; }}
-.stat-value {{ font-size: 1.5rem; font-weight: bold; color: #2563eb; }}
-.stat-label {{ font-size: 0.85rem; color: #888; }}
+* {{ box-sizing: border-box; margin: 0; padding: 0; }}
+body {{
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f0f2f5;
+    color: #1a1a2e;
+    min-height: 100vh;
+    padding: 2.5rem 3rem;
+}}
+
+header {{ margin-bottom: 2rem; }}
+header h1 {{ font-size: 1.6rem; font-weight: 700; color: #1a1a2e; }}
+header .subtitle {{ color: #999; font-size: 0.85rem; margin-top: 0.15rem; }}
+
+.summary {{
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 2.5rem;
+    flex-wrap: wrap;
+}}
+.summary-card {{
+    background: #fff;
+    border-radius: 10px;
+    padding: 1.25rem 2rem;
+    min-width: 150px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}}
+.summary-card .value {{ font-size: 1.75rem; font-weight: 700; color: #1a1a2e; }}
+.summary-card .label {{ font-size: 0.8rem; color: #999; text-transform: uppercase; letter-spacing: 0.4px; }}
+
+.section {{ margin-bottom: 2.5rem; }}
+.section-title {{
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #444;
+    margin-bottom: 0.85rem;
+}}
+
+/* Config table */
+.config-table {{
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    table-layout: fixed;
+}}
+.config-table th {{
+    background: #f8f9fb;
+    font-weight: 600;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: #777;
+    padding: 11px 20px;
+    text-align: left;
+}}
+.config-table th:first-child {{ width: 22%; }}
+.config-table th:last-child {{ width: 10%; }}
+.config-table td {{
+    padding: 14px 20px;
+    border-top: 1px solid #f0f0f3;
+    vertical-align: middle;
+}}
+.config-table tr:hover td {{ background: #fafbfd; }}
+.model-names {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}}
+.model-name-item {{
+    background: #eef2ff;
+    color: #3b5ccc;
+    font-weight: 600;
+    font-size: 0.85rem;
+    padding: 3px 10px;
+    border-radius: 6px;
+    white-space: nowrap;
+}}
+.backend-cell {{
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    font-size: 0.82rem;
+    color: #444;
+    line-height: 1.7;
+    word-break: break-all;
+}}
+.proto-tag {{
+    display: inline-block;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: #fff;
+    background: #6b7280;
+    padding: 1px 7px;
+    border-radius: 4px;
+    margin-right: 4px;
+    vertical-align: middle;
+}}
+.key-cell {{ text-align: center; }}
+.tag {{
+    display: inline-block;
+    padding: 3px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}}
+.tag-yes {{ background: #e6f7e6; color: #2d8a2d; }}
+.tag-no  {{ background: #fff0f0; color: #c44; }}
+
+/* Stats cards */
+.model-cards {{
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}}
+.model-card {{
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    overflow: hidden;
+}}
+.model-card-header {{
+    padding: 12px 20px;
+    background: #f8f9fb;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #f0f0f3;
+}}
+.model-name {{ font-weight: 700; font-size: 0.9rem; color: #1a1a2e; }}
+.model-provider {{
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: #2563eb;
+    background: #eef2ff;
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-weight: 600;
+}}
+.model-card-body {{
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0;
+}}
+.model-card-body .metric {{
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    border-right: 1px solid #f5f5f8;
+}}
+.model-card-body .metric:last-child {{ border-right: none; }}
+.metric-value {{ font-size: 1.1rem; font-weight: 700; color: #1a1a2e; }}
+.metric-unit {{ font-size: 0.7rem; font-weight: 500; color: #999; }}
+.metric-label {{
+    font-size: 0.72rem;
+    color: #aaa;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}}
+
+.empty-state {{
+    text-align: center;
+    padding: 3rem;
+    color: #bbb;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}}
+
+footer {{
+    margin-top: 2.5rem;
+    color: #ccc;
+    font-size: 0.75rem;
+}}
 </style>
 </head>
 <body>
-<h1>two-API Proxy</h1>
 
-<div>
-    <div class="stat"><div class="stat-value">{uptime_m}m {uptime_s}s</div><div class="stat-label">Uptime</div></div>
-    <div class="stat"><div class="stat-value">{stats["total_requests"]}</div><div class="stat-label">Total Requests</div></div>
-    <div class="stat"><div class="stat-value">{len(config.models)}</div><div class="stat-label">Model Groups</div></div>
+<header>
+    <h1>two-API Proxy</h1>
+    <div class="subtitle">LLM API Proxy &mdash; OpenAI &amp; Anthropic compatible</div>
+</header>
+
+<div class="summary">
+    <div class="summary-card">
+        <div class="value">{uptime_m}m {uptime_s}s</div>
+        <div class="label">Uptime</div>
+    </div>
+    <div class="summary-card">
+        <div class="value">{stats["total_requests"]}</div>
+        <div class="label">Total Requests</div>
+    </div>
+    <div class="summary-card">
+        <div class="value">{len(config.models)}</div>
+        <div class="label">Model Groups</div>
+    </div>
 </div>
 
-<h2>Config — Models</h2>
-<table>
-<tr><th>Names</th><th>Backends</th><th>API Key</th></tr>
-{models_html}
-</table>
+<div class="section">
+    <div class="section-title">Model Configuration</div>
+    <table class="config-table">
+    <thead><tr><th>Model Names</th><th>Backend URLs</th><th>API Key</th></tr></thead>
+    <tbody>{config_rows}</tbody>
+    </table>
+</div>
 
-<h2>Token / Usage Stats</h2>
-<table>
-<tr><th>Model</th><th>Provider</th><th>Requests</th><th>Prompt Tokens</th><th>Completion Tokens</th><th>Cache Read</th><th>Cache Write</th><th>Avg Latency (ms)</th></tr>
-{stats_rows if stats_rows else '<tr><td colspan="8" style="color:#999;">No requests yet</td></tr>'}
-</table>
+<div class="section">
+    <div class="section-title">Usage Statistics</div>
+    <div class="model-cards">
+        {stats_cards if stats_cards else '<div class="empty-state">No requests processed yet</div>'}
+    </div>
+</div>
+
+<footer>two-API &copy; 2026</footer>
+
 </body>
 </html>"""
     return html
