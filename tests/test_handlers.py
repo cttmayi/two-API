@@ -40,8 +40,7 @@ def app_with_models():
 @pytest.fixture
 def client(app_with_models):
     transport = httpx.ASGITransport(app=app_with_models)
-    client = httpx.AsyncClient(transport=transport, base_url="http://test")
-    return client
+    return httpx.AsyncClient(transport=transport, base_url="http://test")
 
 
 class TestOpenAIEndpoints:
@@ -59,7 +58,7 @@ class TestOpenAIEndpoints:
         mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
         set_forward_client(mock_client)
 
-        resp = await client.post("/v1/chat/completions", json={
+        resp = await client.post("/chat/completions", json={
             "model": "gpt-4o",
             "messages": [{"role": "user", "content": "hi"}],
         })
@@ -69,7 +68,7 @@ class TestOpenAIEndpoints:
 
     @pytest.mark.asyncio
     async def test_chat_completions_missing_model(self, client):
-        resp = await client.post("/v1/chat/completions", json={
+        resp = await client.post("/chat/completions", json={
             "messages": [{"role": "user", "content": "hi"}],
         })
         assert resp.status_code == 400
@@ -77,7 +76,7 @@ class TestOpenAIEndpoints:
 
     @pytest.mark.asyncio
     async def test_chat_completions_unknown_model(self, client):
-        resp = await client.post("/v1/chat/completions", json={
+        resp = await client.post("/chat/completions", json={
             "model": "nonexistent",
             "messages": [{"role": "user", "content": "hi"}],
         })
@@ -87,7 +86,7 @@ class TestOpenAIEndpoints:
     @pytest.mark.asyncio
     async def test_chat_completions_wrong_endpoint(self, client):
         """claude-sonnet-4-6 has no openai_base_url, so requesting via OpenAI endpoint should fail."""
-        resp = await client.post("/v1/chat/completions", json={
+        resp = await client.post("/chat/completions", json={
             "model": "claude-sonnet-4-6",
             "messages": [{"role": "user", "content": "hi"}],
         })
@@ -103,7 +102,7 @@ class TestOpenAIEndpoints:
         mock_client = httpx.AsyncClient(transport=httpx.MockTransport(failing_handler))
         set_forward_client(mock_client)
 
-        resp = await client.post("/v1/chat/completions", json={
+        resp = await client.post("/chat/completions", json={
             "model": "gpt-4o",
             "messages": [{"role": "user", "content": "hi"}],
         })
@@ -118,7 +117,7 @@ class TestOpenAIEndpoints:
         mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
         set_forward_client(mock_client)
 
-        resp = await client.post("/v1/chat/completions", json={
+        resp = await client.post("/chat/completions", json={
             "model": "gpt-4o",
             "messages": [{"role": "user", "content": "hi"}],
         })
@@ -127,7 +126,7 @@ class TestOpenAIEndpoints:
 
     @pytest.mark.asyncio
     async def test_list_models(self, client):
-        resp = await client.get("/v1/models")
+        resp = await client.get("/models")
         assert resp.status_code == 200
         data = resp.json()
         model_ids = [m["id"] for m in data["data"]]
@@ -151,7 +150,7 @@ class TestAnthropicEndpoints:
         mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
         set_forward_client(mock_client)
 
-        resp = await client.post("/v1/messages", json={
+        resp = await client.post("/messages", json={
             "model": "claude-sonnet-4-6",
             "max_tokens": 100,
             "messages": [{"role": "user", "content": "hi"}],
@@ -163,7 +162,7 @@ class TestAnthropicEndpoints:
     @pytest.mark.asyncio
     async def test_messages_wrong_endpoint(self, client):
         """gpt-4o has no anthropic_base_url, so requesting via Anthropic endpoint should fail."""
-        resp = await client.post("/v1/messages", json={
+        resp = await client.post("/messages", json={
             "model": "gpt-4o",
             "max_tokens": 100,
             "messages": [{"role": "user", "content": "hi"}],
@@ -183,7 +182,7 @@ class TestAnthropicEndpoints:
         mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
         set_forward_client(mock_client)
 
-        resp = await client.post("/v1/messages", json={
+        resp = await client.post("/messages", json={
             "model": "deepseek-chat",
             "max_tokens": 100,
             "messages": [{"role": "user", "content": "hi"}],
@@ -214,7 +213,7 @@ class TestStreaming:
         mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
         set_forward_client(mock_client)
 
-        resp = await client.post("/v1/chat/completions", json={
+        resp = await client.post("/chat/completions", json={
             "model": "gpt-4o",
             "messages": [{"role": "user", "content": "hi"}],
             "stream": True,

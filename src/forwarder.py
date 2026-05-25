@@ -44,9 +44,7 @@ def _prepare_headers(headers: dict, api_key: str | None) -> dict:
     return result
 
 
-def _build_backend_url(base_url: str, path: str, query_string: str, strip_prefix: str | None = None) -> str:
-    if strip_prefix and path.startswith(strip_prefix):
-        path = path[len(strip_prefix):]
+def _build_backend_url(base_url: str, path: str, query_string: str) -> str:
     url = base_url.rstrip("/") + path
     if query_string:
         url += "?" + query_string
@@ -58,9 +56,8 @@ async def forward_non_stream(
     base_url: str,
     api_key: str | None,
     body: bytes | None = None,
-    strip_path_prefix: str | None = None,
 ) -> Response:
-    url = _build_backend_url(base_url, request.url.path, request.url.query, strip_path_prefix)
+    url = _build_backend_url(base_url, request.url.path, request.url.query)
     headers = _prepare_headers(dict(request.headers), api_key)
     if body is None:
         body = await request.body()
@@ -90,9 +87,8 @@ async def forward_stream(
     base_url: str,
     api_key: str | None,
     body: bytes | None = None,
-    strip_path_prefix: str | None = None,
 ) -> StreamingResponse:
-    url = _build_backend_url(base_url, request.url.path, request.url.query, strip_path_prefix)
+    url = _build_backend_url(base_url, request.url.path, request.url.query)
     headers = _prepare_headers(dict(request.headers), api_key)
     if body is None:
         body = await request.body()

@@ -15,7 +15,7 @@ def _get_router(request: Request) -> ModelRouter:
     return request.app.state.router
 
 
-@router.post("/v1/chat/completions")
+@router.post("/chat/completions")
 async def chat_completions(request: Request):
     body_bytes = await request.body()
     try:
@@ -42,9 +42,9 @@ async def chat_completions(request: Request):
 
     try:
         if streaming:
-            return await forward_stream(request, entry.openai_base_url, entry.api_key, body=body_bytes, strip_path_prefix=entry.strip_path_prefix)
+            return await forward_stream(request, entry.openai_base_url, entry.api_key, body=body_bytes, )
         else:
-            resp = await forward_non_stream(request, entry.openai_base_url, entry.api_key, body=body_bytes, strip_path_prefix=entry.strip_path_prefix)
+            resp = await forward_non_stream(request, entry.openai_base_url, entry.api_key, body=body_bytes, )
             latency_ms = int((time.perf_counter() - start) * 1000)
 
             prompt_tokens = None
@@ -76,7 +76,7 @@ async def chat_completions(request: Request):
         return JSONResponse(status_code=502, content={"error": "Backend unreachable"})
 
 
-@router.get("/v1/models")
+@router.get("/models")
 async def list_models(request: Request):
     model_router = _get_router(request)
     models = model_router.list_models("openai")
@@ -86,7 +86,7 @@ async def list_models(request: Request):
     })
 
 
-@router.post("/v1/embeddings")
+@router.post("/embeddings")
 async def embeddings(request: Request):
     body_bytes = await request.body()
     try:
@@ -103,5 +103,5 @@ async def embeddings(request: Request):
     if entry is None:
         return JSONResponse(status_code=404, content={"error": f"Unknown model: {model_name}"})
 
-    resp = await forward_non_stream(request, entry.openai_base_url, entry.api_key, body=body_bytes, strip_path_prefix=entry.strip_path_prefix)
+    resp = await forward_non_stream(request, entry.openai_base_url, entry.api_key, body=body_bytes, )
     return resp

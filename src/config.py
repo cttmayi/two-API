@@ -18,7 +18,6 @@ class ModelEntry(BaseModel):
     openai_base_url: str | None = None
     anthropic_base_url: str | None = None
     api_key: str | None = None
-    strip_path_prefix: str | None = None
 
     @model_validator(mode="after")
     def check_at_least_one_base_url(self):

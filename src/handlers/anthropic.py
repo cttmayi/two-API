@@ -14,7 +14,7 @@ def _get_router(request: Request):
     return request.app.state.router
 
 
-@router.post("/v1/messages")
+@router.post("/messages")
 async def messages(request: Request):
     body_bytes = await request.body()
     try:
@@ -41,9 +41,9 @@ async def messages(request: Request):
 
     try:
         if streaming:
-            return await forward_stream(request, entry.anthropic_base_url, entry.api_key, body=body_bytes, strip_path_prefix=entry.strip_path_prefix)
+            return await forward_stream(request, entry.anthropic_base_url, entry.api_key, body=body_bytes, )
         else:
-            resp = await forward_non_stream(request, entry.anthropic_base_url, entry.api_key, body=body_bytes, strip_path_prefix=entry.strip_path_prefix)
+            resp = await forward_non_stream(request, entry.anthropic_base_url, entry.api_key, body=body_bytes, )
             latency_ms = int((time.perf_counter() - start) * 1000)
 
             input_tokens = None
