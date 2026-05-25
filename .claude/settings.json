@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Edit(./**)",
+      "Write(./**)",
+      "Bash(.venv/bin/python*)",
+      "Bash(.venv/bin/pip*)",
+      "Bash(python*)",
+      "Bash(pip*)",
+      "Bash(poetry*)",
+      "Bash(conda*)",
+      "Bash(git*)",
+      "Bash(ls*)",
+      "Bash(cd*)",
+      "Bash(echo*)",
+      "Bash(cat*)",
+      "WebFetch(domain:ark.cn-beijing.volces.com)",
+      "WebFetch(domain:n)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:mirrors.aliyun.com)",
+      "Skill(superpowers:writing-plans)",
+      "Skill(superpowers:subagent-driven-development)",
+      "Skill(superpowers:finishing-a-development-branch)",
+      "Skill(superpowers:brainstorming)",
+      "Skill(superpowers:test-driven-development)",
+      "WebSearch"
+    ],
+    "deny": [
+      "Bash(sudo*)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~)",
+      "Bash(mkfs*)",
+      "Write(./plugins/superpowers/**)",
+      "Edit(./plugins/superpowers/**)",
+      "Bash(chmod 777*)",
+      "Read(./.env*)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.gnupg/**)"
+    ],
+    "defaultMode": "acceptEdits"
+  },
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true
+  },
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true,
+    "network": {
+      "allowedDomains": [
+        "pypi.org",
+        "files.pythonhosted.org",
+        "pypi.python.org",
+        "github.com",
+        "*.githubusercontent.com"
+      ],
+      "allowLocalBinding": true
+    },
+    "filesystem": {
+      "allowWrite": [
+        "./",
+        "/tmp",
+        "./.venv/**"
+      ],
+      "denyRead": [
+        "./.env*",
+        "~/.ssh",
+        "~/.aws",
+        "~/.gnupg",
+        "./.claude/settings.local.json",
+        "./.simple-agent/config.yml"
+      ]
+    },
+    "excludedCommands": [
+      "git"
+    ]
+  },
+  "toolConfirmation": {
+    "enabled": false
+  }
+}
