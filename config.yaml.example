@@ -35,6 +35,11 @@ models:
     openai_base_url: https://ark.cn-beijing.volces.com/api/v3
     api_key: ark-your-key
 
+# 全局别名: 请求中 model 字段先查此映射, 匹配则替换后再路由
+alias:
+  default: gpt-4o-mini
+  pro: gpt-4o
+
 logging:
   level: INFO
   output: file

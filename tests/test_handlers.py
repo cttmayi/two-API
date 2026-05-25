@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from src.config import ModelEntry
 from src.router import ModelRouter
 from src.forwarder import set_forward_client, reset_forward_client
+from src.config import Config
 
 
 @pytest.fixture(autouse=True)
@@ -32,6 +33,7 @@ def app_with_models():
         ModelEntry(names=["claude-sonnet-4-6"], anthropic_base_url="https://api.anthropic.com", api_key="sk-ant"),
     ]
     app.state.router = ModelRouter(models)
+    app.state.config = Config(models=models)
     app.include_router(openai_router)
     app.include_router(anthropic_router)
     return app
@@ -82,6 +84,35 @@ class TestOpenAIEndpoints:
         })
         assert resp.status_code == 404
         assert "unknown" in resp.json()["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_chat_completions_global_alias(self, client, app_with_models):
+        """Global alias should rewrite model before routing."""
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=["gpt-4o-mini"], openai_base_url="https://api.openai.com", api_key="sk-test"),
+            ],
+            alias={"default": "gpt-4o-mini"},
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            body = json.loads(request.content)
+            assert body["model"] == "gpt-4o-mini", f"Expected gpt-4o-mini, got {body['model']}"
+            return httpx.Response(200, json={
+                "choices": [{"message": {"content": "ok"}}],
+            })
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/chat/completions", json={
+            "model": "default",
+            "messages": [{"role": "user", "content": "hi"}],
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["choices"][0]["message"]["content"] == "ok"
 
     @pytest.mark.asyncio
     async def test_chat_completions_wrong_endpoint(self, client):

@@ -18,6 +18,15 @@ def _get_router(request: Request):
     return request.app.state.router
 
 
+def _apply_alias(request: Request, body: dict) -> tuple[str, bytes | None]:
+    model_name = body.get("model", "")
+    aliased = request.app.state.config.alias.get(model_name)
+    if aliased:
+        body["model"] = aliased
+        return aliased, json.dumps(body).encode("utf-8")
+    return model_name, None
+
+
 @router.post("/v1/messages")
 @router.post("/messages")
 async def messages(request: Request):
@@ -30,6 +39,10 @@ async def messages(request: Request):
     model_name = body_json.get("model")
     if not model_name:
         return JSONResponse(status_code=400, content={"error": "Missing 'model' field"})
+
+    model_name, new_body = _apply_alias(request, body_json)
+    if new_body:
+        body_bytes = new_body
 
     model_router = _get_router(request)
     match_result = model_router.match(model_name, "anthropic")

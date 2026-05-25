@@ -19,6 +19,16 @@ def _get_router(request: Request) -> ModelRouter:
     return request.app.state.router
 
 
+def _apply_alias(request: Request, body: dict) -> tuple[str, bytes | None]:
+    """Apply global alias to model field. Returns (model_name, updated_body_bytes|None)."""
+    model_name = body.get("model", "")
+    aliased = request.app.state.config.alias.get(model_name)
+    if aliased:
+        body["model"] = aliased
+        return aliased, json.dumps(body).encode("utf-8")
+    return model_name, None
+
+
 @router.post("/chat/completions")
 async def chat_completions(request: Request):
     body_bytes = await request.body()
@@ -30,6 +40,10 @@ async def chat_completions(request: Request):
     model_name = body_json.get("model")
     if not model_name:
         return JSONResponse(status_code=400, content={"error": "Missing 'model' field"})
+
+    model_name, new_body = _apply_alias(request, body_json)
+    if new_body:
+        body_bytes = new_body
 
     model_router = _get_router(request)
     match_result = model_router.match(model_name, "openai")
@@ -167,6 +181,10 @@ async def embeddings(request: Request):
     model_name = body_json.get("model")
     if not model_name:
         return JSONResponse(status_code=400, content={"error": "Missing 'model' field"})
+
+    model_name, new_body = _apply_alias(request, body_json)
+    if new_body:
+        body_bytes = new_body
 
     model_router = _get_router(request)
     match_result = model_router.match(model_name, "openai")

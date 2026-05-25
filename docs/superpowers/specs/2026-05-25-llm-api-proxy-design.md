@@ -87,6 +87,11 @@ models:
       - local-llama
     openai_base_url: http://localhost:8080/v1
 
+
+# Global aliases: model field rewritten before routing
+alias:
+  default: gpt-4o-mini
+  pro: gpt-4o
 logging:
   level: INFO
   output: file
@@ -95,6 +100,7 @@ logging:
 
 ### Field Rules
 
+- `alias`: Optional global alias mapping. Applied before routing — `model` in request body is rewritten if it matches a key. Use for centralized alias management without touching models config.
 - `names`: Array of model names sharing the same backend. Each item can be:
   - A plain string (e.g., `gpt-4o`): client and backend use the same name.
   - An alias mapping (e.g., `fast: gpt-4o-mini`): client requests "fast", proxy forwards "gpt-4o-mini" to backend.

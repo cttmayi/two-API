@@ -31,11 +31,10 @@ models:
     anthropic_base_url: https://api.anthropic.com/v1
     api_key: sk-ant-your-anthropic-key
 
-  # 模型别名: 客户端用 "fast" 请求, 代理转发 "gpt-4o-mini"
-  - names:
-      - fast: gpt-4o-mini
-    openai_base_url: https://api.openai.com/v1
-    api_key: sk-your-openai-key
+  # 全局别名: 请求中 model 字段先查此映射, 匹配则替换后再路由
+  alias:
+    default: gpt-4o-mini
+    pro: gpt-4o
 
 logging:
   level: INFO
@@ -43,6 +42,7 @@ logging:
   dir: ./logs
 ```
 
+- `alias`: 全局模型别名（可选），请求中 `model` 字段会先在此映射中查找，匹配则替换后走正常路由。用于集中管理别名，不改 models 配置就能切换
 - `names`: 模型名列表，匹配请求 body 中的 `model` 字段。支持两种格式：
   - 普通字符串 `gpt-4o`：客户端和后台用同一个模型名
   - 别名映射 `fast: gpt-4o-mini`：客户端用 `"fast"` 请求，代理转发为 `"gpt-4o-mini"`

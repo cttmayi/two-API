@@ -74,6 +74,25 @@ class TestLoadConfig:
         assert cfg.models[1].names == ["claude-sonnet-4-6"]
         assert cfg.logging.level == "DEBUG"
 
+    def test_alias_default_value(self, tmp_path):
+        data = {
+            "models": [{"names": ["gpt-4o"], "openai_base_url": "https://api.openai.com"}],
+        }
+        path = tmp_path / "config.yaml"
+        path.write_text(yaml.dump(data))
+        cfg = load_config(str(path))
+        assert cfg.alias == {}
+
+    def test_alias_with_entries(self, tmp_path):
+        data = {
+            "models": [{"names": ["gpt-4o"], "openai_base_url": "https://api.openai.com"}],
+            "alias": {"default": "gpt-4o-mini", "pro": "gpt-4o"},
+        }
+        path = tmp_path / "config.yaml"
+        path.write_text(yaml.dump(data))
+        cfg = load_config(str(path))
+        assert cfg.alias == {"default": "gpt-4o-mini", "pro": "gpt-4o"}
+
     def test_load_config_file_not_found(self):
         with pytest.raises(FileNotFoundError):
             load_config("/nonexistent/config.yaml")
