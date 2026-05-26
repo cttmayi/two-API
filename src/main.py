@@ -111,17 +111,21 @@ async def homepage(request: Request):
         </div>"""
 
     def _tool_input_summary(input_val):
-        """Extract a short summary from a tool_use input dict."""
+        """Extract a short summary from a tool_use input dict, showing all fields."""
         if not isinstance(input_val, dict):
             return ""
-        for key in ("command", "file_path", "subject", "description", "query", "pattern", "prompt"):
-            v = input_val.get(key)
+        pairs = []
+        for k, v in input_val.items():
             if isinstance(v, str) and v.strip():
-                return v.strip()[:80]
-        for v in input_val.values():
-            if isinstance(v, str) and v.strip():
-                return v.strip()[:80]
-        return ""
+                val = v.strip()[:60]
+                pairs.append(k + "=" + val)
+            elif isinstance(v, (int, float, bool)):
+                pairs.append(k + "=" + str(v))
+            elif isinstance(v, list):
+                pairs.append(k + "=[...]")
+            elif isinstance(v, dict):
+                pairs.append(k + "={...}")
+        return "(" + ", ".join(pairs) + ")" if pairs else ""
 
 
     recent_rows = ""
@@ -176,10 +180,7 @@ async def homepage(request: Request):
                     elif t == "tool_use":
                         name = str(block.get("name", ""))
                         inp = _tool_input_summary(block.get("input"))
-                        if inp:
-                            parts.append("[tool: " + name + " " + inp + "]")
-                        else:
-                            parts.append("[tool: " + name + "]")
+                        parts.append("[tool: " + name + "]" + inp)
             output_preview = " ".join(parts)
         elif isinstance(output, dict):
             # OpenAI: dict with content and optional tool_calls
@@ -190,16 +191,15 @@ async def homepage(request: Request):
                 if isinstance(tc, dict):
                     fn = tc.get("function", {})
                     fn_name = str(fn.get("name", ""))
+                    inp = ""
                     args_str = fn.get("arguments", "")
                     if isinstance(args_str, str) and args_str.strip():
                         try:
                             args_obj = json.loads(args_str)
                             inp = _tool_input_summary(args_obj)
-                            if inp:
-                                fn_name += " " + inp
                         except (json.JSONDecodeError, UnicodeDecodeError):
                             pass
-                    parts.append("[tool: " + fn_name + "]")
+                    parts.append("[tool: " + fn_name + "]" + inp)
             output_preview = " ".join(parts)
         output_preview = _html.escape(output_preview[:120])
 
