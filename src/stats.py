@@ -6,6 +6,34 @@ from datetime import datetime, timezone, timedelta
 
 TZ = timezone(timedelta(hours=8))
 
+MAX_TEXT_LEN = 500
+
+
+def _truncate_content(obj):
+    """Truncate long text fields in content blocks to avoid storing huge payloads."""
+    if isinstance(obj, dict):
+        truncated = {}
+        for k, v in obj.items():
+            if k in ("text", "content", "name", "arguments", "partial_json",
+                     "input", "_input_json", "thinking", "signature"):
+                truncated[k] = _truncate_text(v)
+            else:
+                truncated[k] = _truncate_content(v)
+        return truncated
+    if isinstance(obj, list):
+        return [_truncate_content(item) for item in obj]
+    return obj
+
+
+def _truncate_text(v):
+    if isinstance(v, str) and len(v) > MAX_TEXT_LEN:
+        return v[:MAX_TEXT_LEN] + "...[truncated]"
+    if isinstance(v, dict):
+        return _truncate_content(v)
+    if isinstance(v, list):
+        return [_truncate_content(item) for item in v]
+    return v
+
 
 class Stats:
     def __init__(self):
@@ -60,8 +88,8 @@ class Stats:
                 "completion_tokens": completion_tokens,
                 "cache_read": cache_read,
                 "cache_write": cache_write,
-                "input_messages": input_messages,
-                "output": output_content,
+                "input_messages": _truncate_content(input_messages),
+                "output": _truncate_content(output_content),
             })
 
     def snapshot(self) -> dict:
