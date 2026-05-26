@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import html as _html
 import json
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
@@ -113,8 +114,8 @@ async def homepage(request: Request):
         cw = r.get("cache_write") or 0
         status_cls = "status-ok" if (r.get("status") or 200) < 400 else "status-err"
         stream_badge = '<span class="stream-badge stream-yes">S</span>' if r.get("streaming") else '<span class="stream-badge stream-no">N</span>'
-        input_json = json.dumps(r.get("input_messages", []), ensure_ascii=False, indent=2)
-        output_json = json.dumps(r.get("output"), ensure_ascii=False, indent=2)
+        input_json = _html.escape(json.dumps(r.get("input_messages", []), ensure_ascii=False, indent=2))
+        output_json = _html.escape(json.dumps(r.get("output"), ensure_ascii=False, indent=2))
         recent_rows += f"""
         <tr class="recent-row" onclick="toggleDetail('{detail_id}')">
             <td class="cell-time">{r.get("time", "")}</td>
