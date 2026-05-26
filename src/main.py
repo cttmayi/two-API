@@ -39,6 +39,7 @@ def _fmt(n: int | None) -> str:
     return str(n)
 
 
+@app.head("/")
 @app.get("/", response_class=HTMLResponse)
 async def homepage(request: Request):
     config = request.app.state.config
