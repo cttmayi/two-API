@@ -181,6 +181,8 @@ async def homepage(request: Request):
             <td class="cell-num">{r.get("latency_ms", "")}ms</td>
             <td class="cell-num">{_fmt(pt)}</td>
             <td class="cell-num">{_fmt(ct)}</td>
+            <td class="cell-num">{_fmt(cr)}</td>
+            <td class="cell-num">{_fmt(cw)}</td>
             <td class="cell-preview" title="{input_preview}">{input_preview}</td>
             <td class="cell-preview" title="{output_preview}">{output_preview}</td>
         </tr>
