@@ -114,6 +114,61 @@ async def homepage(request: Request):
         cw = r.get("cache_write") or 0
         status_cls = "status-ok" if (r.get("status") or 200) < 400 else "status-err"
         stream_badge = '<span class="stream-badge stream-yes">S</span>' if r.get("streaming") else '<span class="stream-badge stream-no">N</span>'
+
+        # Extract input preview: last message content
+        input_preview = ""
+        messages = r.get("input_messages", [])
+        if messages:
+            last_msg = messages[-1]
+            role = last_msg.get("role", "")
+            content = last_msg.get("content", "")
+            if isinstance(content, list):
+                # Anthropic format: content blocks
+                parts = []
+                for block in content:
+                    if isinstance(block, dict):
+                        t = block.get("type", "")
+                        if t == "text":
+                            parts.append(str(block.get("text", "")))
+                        elif t == "tool_result":
+                            parts.append("[tool_result: " + str(block.get("content", "")) + "]")
+                        elif t == "tool_use":
+                            parts.append("[tool_use: " + str(block.get("name", "")) + "]")
+                        elif t == "image":
+                            parts.append("[image]")
+                input_preview = " ".join(parts)
+            elif isinstance(content, str):
+                input_preview = content
+            if role and not input_preview.startswith("[" + role):
+                input_preview = "[" + role + "] " + input_preview
+        input_preview = _html.escape(input_preview[:120])
+
+        # Extract output preview: text + tool calls
+        output_preview = ""
+        output = r.get("output")
+        if isinstance(output, list):
+            # Anthropic: list of content blocks
+            parts = []
+            for block in output:
+                if isinstance(block, dict):
+                    t = block.get("type", "")
+                    if t == "text":
+                        parts.append(str(block.get("text", "")))
+                    elif t == "tool_use":
+                        parts.append("[tool_use: " + str(block.get("name", "")) + "]")
+            output_preview = " ".join(parts)
+        elif isinstance(output, dict):
+            # OpenAI: dict with content and optional tool_calls
+            parts = []
+            if output.get("content"):
+                parts.append(str(output["content"]))
+            for tc in output.get("tool_calls", []):
+                if isinstance(tc, dict):
+                    fn = tc.get("function", {})
+                    parts.append("[tool: " + str(fn.get("name", "")) + "]")
+            output_preview = " ".join(parts)
+        output_preview = _html.escape(output_preview[:120])
+
         input_json = _html.escape(json.dumps(r.get("input_messages", []), ensure_ascii=False, indent=2))
         output_json = _html.escape(json.dumps(r.get("output"), ensure_ascii=False, indent=2))
         recent_rows += f"""
@@ -126,11 +181,11 @@ async def homepage(request: Request):
             <td class="cell-num">{r.get("latency_ms", "")}ms</td>
             <td class="cell-num">{_fmt(pt)}</td>
             <td class="cell-num">{_fmt(ct)}</td>
-            <td class="cell-num">{_fmt(cr)}</td>
-            <td class="cell-num">{_fmt(cw)}</td>
+            <td class="cell-preview" title="{input_preview}">{input_preview}</td>
+            <td class="cell-preview" title="{output_preview}">{output_preview}</td>
         </tr>
         <tr class="detail-row" id="{detail_id}" style="display:none;">
-            <td colspan="10">
+            <td colspan="12">
                 <div class="detail-grid">
                     <div class="detail-block">
                         <div class="detail-label">Input Messages</div>
@@ -150,7 +205,7 @@ async def homepage(request: Request):
     model_count = len(config.models)
     stats_section = stats_cards if stats_cards else '<div class="empty-state">No requests processed yet</div>'
     if recent_rows:
-        recent_section = '<table class="recent-table"><thead><tr><th>Time</th><th>Model</th><th>Provider</th><th>Stream</th><th>Status</th><th>Latency</th><th>Prompt</th><th>Completion</th><th>Cache R</th><th>Cache W</th></tr></thead><tbody>' + recent_rows + '</tbody></table>'
+        recent_section = '<table class="recent-table"><thead><tr><th>Time</th><th>Model</th><th>Provider</th><th>S</th><th>Status</th><th>Latency</th><th>Prompt</th><th>Compl</th><th>CacheR</th><th>CacheW</th><th>Input</th><th>Output</th></tr></thead><tbody>' + recent_rows + '</tbody></table>'
     else:
         recent_section = '<div class="empty-state">No requests processed yet</div>'
 
@@ -379,6 +434,14 @@ header .subtitle {{ color: #999; font-size: 0.85rem; margin-top: 0.15rem; }}
     font-size: 0.78rem;
     color: #444;
     text-align: right;
+}}
+.cell-preview {{
+    font-size: 0.78rem;
+    color: #555;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }}
 .status-ok {{ color: #2d8a2d !important; font-weight: 600; }}
 .status-err {{ color: #c44 !important; font-weight: 600; }}
