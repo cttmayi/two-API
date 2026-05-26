@@ -145,8 +145,15 @@ async def homepage(request: Request):
 
     uptime_m = stats["uptime_seconds"] // 60
     uptime_s = stats["uptime_seconds"] % 60
+    total_requests = stats["total_requests"]
+    model_count = len(config.models)
+    stats_section = stats_cards if stats_cards else '<div class="empty-state">No requests processed yet</div>'
+    if recent_rows:
+        recent_section = '<table class="recent-table"><thead><tr><th>Time</th><th>Model</th><th>Provider</th><th>Stream</th><th>Status</th><th>Latency</th><th>Prompt</th><th>Completion</th><th>Cache R</th><th>Cache W</th></tr></thead><tbody>' + recent_rows + '</tbody></table>'
+    else:
+        recent_section = '<div class="empty-state">No requests processed yet</div>'
 
-    html = f"""<!DOCTYPE html>
+    html = """<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
@@ -444,11 +451,11 @@ footer {{
         <div class="label">Uptime</div>
     </div>
     <div class="summary-card">
-        <div class="value">{stats["total_requests"]}</div>
+        <div class="value">{total_requests}</div>
         <div class="label">Total Requests</div>
     </div>
     <div class="summary-card">
-        <div class="value">{len(config.models)}</div>
+        <div class="value">{model_count}</div>
         <div class="label">Model Groups</div>
     </div>
 </div>
@@ -468,14 +475,14 @@ footer {{
 <div class="section">
     <div class="section-title">Usage Statistics</div>
     <div class="model-cards">
-        {stats_cards if stats_cards else '<div class="empty-state">No requests processed yet</div>'}
+        {stats_section}
     </div>
 </div>
 
 <div class="section">
     <div class="section-title">Recent Requests</div>
     <div class="recent-table-wrap">
-        {'<table class="recent-table"><thead><tr><th>Time</th><th>Model</th><th>Provider</th><th>Stream</th><th>Status</th><th>Latency</th><th>Prompt</th><th>Completion</th><th>Cache R</th><th>Cache W</th></tr></thead><tbody>' + recent_rows + '</tbody></table>' if recent_rows else '<div class="empty-state">No requests processed yet</div>'}
+        {recent_section}
     </div>
 </div>
 
@@ -504,7 +511,12 @@ function toggleSection(id) {{
 <footer>two-API &copy; 2026</footer>
 
 </body>
-</html>"""
+</html>""".format(
+        uptime_m=uptime_m, uptime_s=uptime_s,
+        total_requests=total_requests, model_count=model_count,
+        config_rows=config_rows, stats_section=stats_section,
+        recent_section=recent_section,
+    )
     return html
 
 
