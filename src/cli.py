@@ -24,7 +24,7 @@ def main():
 
     print(f"Starting two-API on http://{host}:{port}")
     print(f"Config: {args.config}")
-    uvicorn.run("src.main:app", host=host, port=port, log_level="info")
+    uvicorn.run("src.main:app", host=host, port=port, log_level="info", reload=True)
 
 
 if __name__ == "__main__":
