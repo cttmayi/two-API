@@ -94,21 +94,51 @@ async def chat_completions(request: Request):
                 prompt_tokens = None
                 completion_tokens = None
                 cache_read_tokens = None
-                for line in reversed(sse_lines):
-                    if line.startswith("data:"):
-                        data_str = line[5:].strip()
-                        if data_str == "[DONE]":
-                            continue
-                        try:
-                            data = json.loads(data_str)
-                            usage = data.get("usage", {})
-                            if usage:
-                                prompt_tokens = usage.get("prompt_tokens")
-                                completion_tokens = usage.get("completion_tokens")
-                                cache_read_tokens = usage.get("prompt_tokens_details", {}).get("cached_tokens")
-                                break
-                        except (json.JSONDecodeError, UnicodeDecodeError):
-                            pass
+                # Accumulate output from deltas
+                output_text = ""
+                tool_calls_by_idx: dict[int, dict] = {}
+                for line in sse_lines:
+                    if not line.startswith("data:"):
+                        continue
+                    data_str = line[5:].strip()
+                    if data_str == "[DONE]":
+                        continue
+                    try:
+                        data = json.loads(data_str)
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        continue
+                    usage = data.get("usage", {})
+                    if usage:
+                        if prompt_tokens is None:
+                            prompt_tokens = usage.get("prompt_tokens")
+                        if completion_tokens is None:
+                            completion_tokens = usage.get("completion_tokens")
+                        if cache_read_tokens is None:
+                            cache_read_tokens = usage.get("prompt_tokens_details", {}).get("cached_tokens")
+                    choices = data.get("choices", [])
+                    if choices:
+                        delta = choices[0].get("delta", {})
+                        if delta.get("content"):
+                            output_text += delta["content"]
+                        for tc in delta.get("tool_calls", []):
+                            idx = tc.get("index", 0)
+                            if idx not in tool_calls_by_idx:
+                                tool_calls_by_idx[idx] = {
+                                    "id": tc.get("id") or "",
+                                    "type": "function",
+                                    "function": {"name": "", "arguments": ""},
+                                }
+                            t = tool_calls_by_idx[idx]
+                            if tc.get("id"):
+                                t["id"] = tc["id"]
+                            if tc.get("function", {}).get("name"):
+                                t["function"]["name"] += tc["function"]["name"]
+                            if tc.get("function", {}).get("arguments"):
+                                t["function"]["arguments"] += tc["function"]["arguments"]
+
+                output_content: dict = {"content": output_text}
+                if tool_calls_by_idx:
+                    output_content["tool_calls"] = [tool_calls_by_idx[i] for i in sorted(tool_calls_by_idx)]
 
                 logger.info(
                     "proxy_request",
@@ -121,6 +151,14 @@ async def chat_completions(request: Request):
                 )
                 get_stats().record(model_name, "openai", prompt_tokens, completion_tokens,
                                    latency_ms, cache_read_tokens=cache_read_tokens)
+                get_stats().record_detail(
+                    model=model_name, provider="openai", streaming=True,
+                    latency_ms=latency_ms, status=status_code,
+                    prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+                    cache_read=cache_read_tokens, cache_write=None,
+                    input_messages=body_json.get("messages", []),
+                    output_content=output_content,
+                )
 
             return StreamingResponse(stream_with_stats(), media_type="text/event-stream")
         else:
@@ -130,12 +168,14 @@ async def chat_completions(request: Request):
             prompt_tokens = None
             completion_tokens = None
             cache_read_tokens = None
+            output_content = None
             try:
                 resp_body = json.loads(resp.body)
                 usage = resp_body.get("usage", {})
                 prompt_tokens = usage.get("prompt_tokens")
                 completion_tokens = usage.get("completion_tokens")
                 cache_read_tokens = usage.get("prompt_tokens_details", {}).get("cached_tokens")
+                output_content = resp_body.get("choices", [{}])[0].get("message")
             except (json.JSONDecodeError, UnicodeDecodeError):
                 pass
 
@@ -153,6 +193,14 @@ async def chat_completions(request: Request):
             )
             get_stats().record(model_name, "openai", prompt_tokens, completion_tokens, latency_ms,
                                cache_read_tokens=cache_read_tokens)
+            get_stats().record_detail(
+                model=model_name, provider="openai", streaming=False,
+                latency_ms=latency_ms, status=resp.status_code,
+                prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+                cache_read=cache_read_tokens, cache_write=None,
+                input_messages=body_json.get("messages", []),
+                output_content=output_content,
+            )
             return resp
     except httpx.ConnectError:
         return JSONResponse(status_code=502, content={"error": "Backend unreachable"})

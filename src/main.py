@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import json
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from src.config import load_config
@@ -102,6 +103,45 @@ async def homepage(request: Request):
                 </div>
             </div>
         </div>"""
+
+    recent_rows = ""
+    for i, r in enumerate(stats.get("recent", [])):
+        detail_id = f"detail-{i}"
+        pt = r.get("prompt_tokens") or 0
+        ct = r.get("completion_tokens") or 0
+        cr = r.get("cache_read") or 0
+        cw = r.get("cache_write") or 0
+        status_cls = "status-ok" if (r.get("status") or 200) < 400 else "status-err"
+        stream_badge = '<span class="stream-badge stream-yes">S</span>' if r.get("streaming") else '<span class="stream-badge stream-no">N</span>'
+        input_json = json.dumps(r.get("input_messages", []), ensure_ascii=False, indent=2)
+        output_json = json.dumps(r.get("output"), ensure_ascii=False, indent=2)
+        recent_rows += f"""
+        <tr class="recent-row" onclick="toggleDetail('{detail_id}')">
+            <td class="cell-time">{r.get("time", "")}</td>
+            <td>{r.get("model", "")}</td>
+            <td>{r.get("provider", "")}</td>
+            <td>{stream_badge}</td>
+            <td class="{status_cls}">{r.get("status", "")}</td>
+            <td class="cell-num">{r.get("latency_ms", "")}ms</td>
+            <td class="cell-num">{_fmt(pt)}</td>
+            <td class="cell-num">{_fmt(ct)}</td>
+            <td class="cell-num">{_fmt(cr)}</td>
+            <td class="cell-num">{_fmt(cw)}</td>
+        </tr>
+        <tr class="detail-row" id="{detail_id}" style="display:none;">
+            <td colspan="10">
+                <div class="detail-grid">
+                    <div class="detail-block">
+                        <div class="detail-label">Input Messages</div>
+                        <pre class="detail-json">{input_json}</pre>
+                    </div>
+                    <div class="detail-block">
+                        <div class="detail-label">Output</div>
+                        <pre class="detail-json">{output_json}</pre>
+                    </div>
+                </div>
+            </td>
+        </tr>"""
 
     uptime_m = stats["uptime_seconds"] // 60
     uptime_s = stats["uptime_seconds"] % 60
@@ -286,6 +326,104 @@ header .subtitle {{ color: #999; font-size: 0.85rem; margin-top: 0.15rem; }}
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }}
 
+/* Recent Requests */
+.recent-table-wrap {{
+    background: #fff;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}}
+.recent-table {{
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+}}
+.recent-table th {{
+    background: #f8f9fb;
+    font-weight: 600;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: #777;
+    padding: 10px 12px;
+    text-align: left;
+    white-space: nowrap;
+}}
+.recent-table td {{
+    padding: 9px 12px;
+    border-top: 1px solid #f0f0f3;
+    vertical-align: middle;
+}}
+.recent-row {{
+    cursor: pointer;
+    transition: background 0.15s;
+}}
+.recent-row:hover td {{
+    background: #f5f7ff;
+}}
+.cell-time {{
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    font-size: 0.78rem;
+    color: #888;
+}}
+.cell-num {{
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    font-size: 0.78rem;
+    color: #444;
+    text-align: right;
+}}
+.status-ok {{ color: #2d8a2d !important; font-weight: 600; }}
+.status-err {{ color: #c44 !important; font-weight: 600; }}
+.stream-badge {{
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 3px;
+    text-align: center;
+    min-width: 20px;
+}}
+.stream-yes {{ background: #eef2ff; color: #2563eb; }}
+.stream-no {{ background: #f5f5f8; color: #999; }}
+.detail-row td {{
+    padding: 0;
+    background: #fafbfd;
+    border-top: 1px solid #e8e8ef;
+}}
+.detail-grid {{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+}}
+.detail-block {{
+    min-width: 0;
+}}
+.detail-label {{
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: #999;
+    margin-bottom: 6px;
+}}
+.detail-json {{
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    font-size: 0.73rem;
+    line-height: 1.5;
+    color: #333;
+    background: #fff;
+    border: 1px solid #e8e8ef;
+    border-radius: 6px;
+    padding: 12px 14px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 480px;
+    overflow-y: auto;
+    margin: 0;
+}}
+
 footer {{
     margin-top: 2.5rem;
     color: #ccc;
@@ -316,11 +454,15 @@ footer {{
 </div>
 
 <div class="section">
-    <div class="section-title">Model Configuration</div>
+    <div class="section-title" style="cursor:pointer; user-select:none;" onclick="toggleSection('config-body')">
+        <span id="config-arrow" style="display:inline-block;transition:transform 0.2s;margin-right:6px;">&#9654;</span>Model Configuration
+    </div>
+    <div id="config-body" style="display:none;">
     <table class="config-table">
     <thead><tr><th>Model Name</th><th>Backend Name</th><th>Backend URLs</th><th>API Key</th></tr></thead>
     <tbody>{config_rows}</tbody>
     </table>
+    </div>
 </div>
 
 <div class="section">
@@ -329,6 +471,35 @@ footer {{
         {stats_cards if stats_cards else '<div class="empty-state">No requests processed yet</div>'}
     </div>
 </div>
+
+<div class="section">
+    <div class="section-title">Recent Requests</div>
+    <div class="recent-table-wrap">
+        {'<table class="recent-table"><thead><tr><th>Time</th><th>Model</th><th>Provider</th><th>Stream</th><th>Status</th><th>Latency</th><th>Prompt</th><th>Completion</th><th>Cache R</th><th>Cache W</th></tr></thead><tbody>' + recent_rows + '</tbody></table>' if recent_rows else '<div class="empty-state">No requests processed yet</div>'}
+    </div>
+</div>
+
+<script>
+function toggleDetail(id) {{
+    var el = document.getElementById(id);
+    if (el.style.display === "none") {{
+        el.style.display = "table-row";
+    }} else {{
+        el.style.display = "none";
+    }}
+}}
+function toggleSection(id) {{
+    var el = document.getElementById(id);
+    var arrow = document.getElementById(id.replace("body", "arrow"));
+    if (el.style.display === "none") {{
+        el.style.display = "block";
+        arrow.style.transform = "rotate(90deg)";
+    }} else {{
+        el.style.display = "none";
+        arrow.style.transform = "rotate(0deg)";
+    }}
+}}
+</script>
 
 <footer>two-API &copy; 2026</footer>
 

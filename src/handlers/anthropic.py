@@ -94,25 +94,65 @@ async def messages(request: Request):
                 output_tokens = None
                 cache_read_tokens = None
                 cache_write_tokens = None
-                for line in reversed(sse_lines):
+                # Accumulate content blocks from SSE events
+                blocks: dict[int, dict] = {}  # {index: content_block}
+                for line in sse_lines:
                     if line.startswith("data:"):
                         data_str = line[5:].strip()
                         try:
-                            data = json.loads(data_str)
-                            usage = data.get("usage", {})
-                            if usage:
-                                if input_tokens is None:
-                                    input_tokens = usage.get("input_tokens")
-                                if output_tokens is None:
-                                    output_tokens = usage.get("output_tokens")
-                                if cache_read_tokens is None:
-                                    cache_read_tokens = usage.get("cache_read_input_tokens")
-                                if cache_write_tokens is None:
-                                    cache_write_tokens = usage.get("cache_creation_input_tokens")
-                                if all(v is not None for v in [input_tokens, output_tokens, cache_read_tokens, cache_write_tokens]):
-                                    break
+                            evt = json.loads(data_str)
                         except (json.JSONDecodeError, UnicodeDecodeError):
-                            pass
+                            continue
+                        # Collect usage
+                        usage = evt.get("usage", {})
+                        if usage:
+                            if input_tokens is None:
+                                input_tokens = usage.get("input_tokens")
+                            if output_tokens is None:
+                                output_tokens = usage.get("output_tokens")
+                            if cache_read_tokens is None:
+                                cache_read_tokens = usage.get("cache_read_input_tokens")
+                            if cache_write_tokens is None:
+                                cache_write_tokens = usage.get("cache_creation_input_tokens")
+                        # Accumulate content
+                        evt_type = evt.get("type", "")
+                        if evt_type == "content_block_start":
+                            idx = evt.get("index", 0)
+                            cb = evt.get("content_block", {})
+                            cb_type = cb.get("type", "")
+                            if cb_type == "text":
+                                blocks[idx] = {"type": "text", "text": cb.get("text", "")}
+                            elif cb_type == "tool_use":
+                                blocks[idx] = {
+                                    "type": "tool_use",
+                                    "id": cb.get("id", ""),
+                                    "name": cb.get("name", ""),
+                                    "input": cb.get("input", {}),
+                                }
+                        elif evt_type == "content_block_delta":
+                            idx = evt.get("index", 0)
+                            delta = evt.get("delta", {})
+                            if idx in blocks:
+                                b = blocks[idx]
+                                if b["type"] == "text" and delta.get("type") == "text_delta":
+                                    b["text"] += delta.get("text", "")
+                                elif b["type"] == "tool_use" and delta.get("type") == "input_json_delta":
+                                    partial_json = delta.get("partial_json", "")
+                                    if partial_json:
+                                        # Keep as string until the end, then try to parse
+                                        b.setdefault("_input_json", "")
+                                        b["_input_json"] += partial_json
+
+                # Finalize blocks: try to parse tool_use input JSON
+                output_content = []
+                for idx in sorted(blocks.keys()):
+                    b = dict(blocks[idx])
+                    if b["type"] == "tool_use" and "_input_json" in b:
+                        try:
+                            b["input"] = json.loads(b.pop("_input_json"))
+                        except (json.JSONDecodeError, UnicodeDecodeError):
+                            b["input"] = b.pop("_input_json", {})
+                    output_content.append(b)
 
                 logger.info(
                     "proxy_request",
@@ -128,6 +168,14 @@ async def messages(request: Request):
                 get_stats().record(model_name, "anthropic", input_tokens, output_tokens,
                                    latency_ms, cache_read_tokens=cache_read_tokens,
                                    cache_write_tokens=cache_write_tokens)
+                get_stats().record_detail(
+                    model=model_name, provider="anthropic", streaming=True,
+                    latency_ms=latency_ms, status=status_code,
+                    prompt_tokens=input_tokens, completion_tokens=output_tokens,
+                    cache_read=cache_read_tokens, cache_write=cache_write_tokens,
+                    input_messages=body_json.get("messages", []),
+                    output_content=output_content,
+                )
 
             return StreamingResponse(stream_with_stats(), media_type="text/event-stream")
         else:
@@ -138,6 +186,7 @@ async def messages(request: Request):
             output_tokens = None
             cache_read_tokens = None
             cache_write_tokens = None
+            output_content = None
             try:
                 resp_body = json.loads(resp.body)
                 usage = resp_body.get("usage", {})
@@ -145,6 +194,7 @@ async def messages(request: Request):
                 output_tokens = usage.get("output_tokens")
                 cache_read_tokens = usage.get("cache_read_input_tokens")
                 cache_write_tokens = usage.get("cache_creation_input_tokens")
+                output_content = resp_body.get("content")
             except (json.JSONDecodeError, UnicodeDecodeError):
                 pass
 
@@ -165,6 +215,14 @@ async def messages(request: Request):
             get_stats().record(model_name, "anthropic", input_tokens, output_tokens, latency_ms,
                                cache_read_tokens=cache_read_tokens,
                                cache_write_tokens=cache_write_tokens)
+            get_stats().record_detail(
+                model=model_name, provider="anthropic", streaming=False,
+                latency_ms=latency_ms, status=resp.status_code,
+                prompt_tokens=input_tokens, completion_tokens=output_tokens,
+                cache_read=cache_read_tokens, cache_write=cache_write_tokens,
+                input_messages=body_json.get("messages", []),
+                output_content=output_content,
+            )
             return resp
     except httpx.ConnectError:
         return JSONResponse(status_code=502, content={"error": "Backend unreachable"})
