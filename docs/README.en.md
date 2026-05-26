@@ -5,6 +5,13 @@ A transparent LLM API proxy supporting OpenAI-compatible and Anthropic-compatibl
 ## Installation
 
 ```bash
+# From PyPI
+pip install two-api
+
+# From GitHub
+pip install git+https://github.com/cttmayi/two-API.git
+
+# Local development
 pip install -e ".[dev]"
 ```
 
