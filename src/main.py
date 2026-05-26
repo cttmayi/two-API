@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 import html as _html
 import json
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from src.config import load_config
 from src.router import ModelRouter
 from src.logging_setup import setup_logging
@@ -574,7 +574,7 @@ footer {{
 
 <div class="section">
     <div class="section-title" style="cursor:pointer; user-select:none;" onclick="toggleSection('stats-body')">
-        <span id="stats-arrow" style="display:inline-block;transition:transform 0.2s;margin-right:6px;">&#9660;</span>Usage Statistics
+        <span id="stats-arrow" style="display:inline-block;transition:transform 0.2s;margin-right:6px;transform:rotate(90deg);">&#9654;</span>Usage Statistics
     </div>
     <div id="stats-body">
     <div class="model-cards">
@@ -584,7 +584,10 @@ footer {{
 </div>
 
 <div class="section">
-    <div class="section-title">Recent Requests</div>
+    <div class="section-title">
+        Recent Requests
+        <a href="/recent/download" style="font-size:0.75rem;font-weight:400;color:#2563eb;margin-left:12px;text-decoration:none;border:1px solid #2563eb;border-radius:4px;padding:2px 10px;">&#8595; Download</a>
+    </div>
     <div class="recent-table-wrap">
         {recent_section}
     </div>
@@ -622,6 +625,17 @@ function toggleSection(id) {{
         recent_section=recent_section,
     )
     return html
+
+
+@app.get("/recent/download")
+async def download_recent(request: Request):
+    stats = __import__("src.stats", fromlist=["get_stats"]).get_stats().snapshot()
+    recent_json = json.dumps(stats.get("recent", []), ensure_ascii=False, indent=2)
+    return Response(
+        content=recent_json,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": "attachment; filename=recent-requests.json"},
+    )
 
 
 from src.handlers.openai import router as openai_router

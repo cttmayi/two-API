@@ -40,7 +40,7 @@ class Stats:
         self._lock = threading.Lock()
         self._started_at = time.time()
         self._models: dict[str, dict] = {}
-        self._recent: deque[dict] = deque(maxlen=20)
+        self._recent: deque[dict] = deque(maxlen=50)
 
     def record(self, model: str, provider: str, prompt_tokens: int | None,
                completion_tokens: int | None, latency_ms: int | None,
