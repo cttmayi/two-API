@@ -71,6 +71,7 @@ async def homepage(request: Request):
     stats_cards = ""
     for name, m in stats.get("models", {}).items():
         avg_lat = m["total_latency_ms"] / m["requests"] if m["requests"] else 0
+        tok_lat = m["total_latency_ms"] / m["completion_tokens"] if m["completion_tokens"] else 0
         stats_cards += f"""
         <div class="model-card">
             <div class="model-card-header">
@@ -101,6 +102,10 @@ async def homepage(request: Request):
                 <div class="metric">
                     <span class="metric-value">{avg_lat:.0f}<span class="metric-unit"> ms</span></span>
                     <span class="metric-label">Avg Latency</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-value">{tok_lat:.0f}<span class="metric-unit"> ms/tok</span></span>
+                    <span class="metric-label">Per Output Token</span>
                 </div>
             </div>
         </div>"""
@@ -362,7 +367,7 @@ header .subtitle {{ color: #999; font-size: 0.85rem; margin-top: 0.15rem; }}
 }}
 .model-card-body {{
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(7, 1fr);
     gap: 0;
 }}
 .model-card-body .metric {{
@@ -539,9 +544,13 @@ footer {{
 </div>
 
 <div class="section">
-    <div class="section-title">Usage Statistics</div>
+    <div class="section-title" style="cursor:pointer; user-select:none;" onclick="toggleSection('stats-body')">
+        <span id="stats-arrow" style="display:inline-block;transition:transform 0.2s;margin-right:6px;">&#9660;</span>Usage Statistics
+    </div>
+    <div id="stats-body">
     <div class="model-cards">
         {stats_section}
+    </div>
     </div>
 </div>
 
