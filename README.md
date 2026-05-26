@@ -2,6 +2,8 @@
 
 透明 LLM API 代理，支持 OpenAI 兼容和 Anthropic 兼容 API，按模型名称路由到不同后端。
 
+[English Documentation](docs/README.en.md)
+
 ## 安装
 
 ```bash
@@ -147,16 +149,16 @@ curl http://0.0.0.0:8080/messages \
   }'
 ```
 
-**主页（状态面板）:**
-
-```bash
-curl http://0.0.0.0:8080/
-```
+### 主页（状态面板）
 
 访问 `/` 返回 HTML 页面，展示：
-- 运行时间、总请求数、模型组数
-- 模型配置表（名称、后端、API Key 状态）
-- 使用统计表（请求数、输入/输出 token、缓存命中/写入、平均延迟）
+
+- **概览卡片**：运行时间、总请求数、模型组数
+- **模型配置表**：名称、后端、API Key 状态
+- **使用统计**（可折叠）：每模型请求数、输入/输出 token、缓存命中/写入、平均延迟、每输出 token 平均延迟
+- **最近请求**（最近 50 条）：时间、模型、提供商、流式标记、状态码、延迟、输入/输出 token、缓存读写、输入/输出预览
+  - 点击行展开详情，查看完整请求/响应内容和 token 用量
+  - 每行单独下载按钮，保存该次请求为 JSON 文件
 
 流式和非流式请求均记录统计。OpenAI 端点的缓存命中从 `usage.prompt_tokens_details.cached_tokens` 提取，Anthropic 端点的缓存命中/写入从 `usage.cache_read_input_tokens` / `usage.cache_creation_input_tokens` 提取。
 
@@ -164,11 +166,12 @@ curl http://0.0.0.0:8080/
 
 | 端点 | 方法 | 说明 |
 |---|---|---|
-| `/` | GET | 主页，展示配置和使用统计 |
+| `/` | GET | 主页，展示配置、使用统计和最近请求 |
 | `/chat/completions` | POST | OpenAI 兼容对话接口 |
 | `/models` | GET | 列出可用 OpenAI 兼容模型 |
 | `/embeddings` | POST | OpenAI 兼容向量接口 |
 | `/messages`、`/v1/messages` | POST | Anthropic 兼容对话接口 |
+| `/recent/download` | GET | 下载最近请求记录（支持 `?i=N` 下载单条） |
 
 ## 运行测试
 
@@ -182,13 +185,20 @@ python -m pytest -v
 two-API/
 ├── config.yaml.example      # 配置参考
 ├── pyproject.toml
+├── README.md
+├── docs/
+│   └── README.en.md         # 英文文档
 ├── src/
-│   ├── main.py              # FastAPI 入口
+│   ├── __init__.py
+│   ├── main.py              # FastAPI 入口 + 主页 HTML
+│   ├── cli.py               # CLI 启动入口
 │   ├── config.py            # YAML 配置 + Pydantic 校验
 │   ├── router.py            # 模型名 → 后端匹配
 │   ├── forwarder.py         # httpx 转发 + 流式
+│   ├── stats.py             # 线程安全统计 + 最近请求记录
 │   ├── logging_setup.py     # structlog 配置
 │   └── handlers/
+│       ├── __init__.py
 │       ├── openai.py        # OpenAI 兼容端点
 │       └── anthropic.py     # Anthropic 兼容端点
 └── tests/
@@ -197,3 +207,4 @@ two-API/
     ├── test_forwarder.py
     └── test_handlers.py
 ```
+

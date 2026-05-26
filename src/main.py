@@ -219,9 +219,10 @@ async def homepage(request: Request):
             <td class="cell-num">{_fmt(cw)}</td>
             <td class="cell-preview" title="{input_preview}">{input_preview}</td>
             <td class="cell-preview" title="{output_preview}">{output_preview}</td>
+            <td class="cell-save" onclick="event.stopPropagation()"><a href="/recent/download?i={i}" class="save-btn" title="Save">&#128190;</a></td>
         </tr>
         <tr class="detail-row" id="{detail_id}" style="display:none;">
-            <td colspan="12">
+            <td colspan="13">
                 <div class="detail-grid">
                     <div class="detail-block">
                         <div class="detail-label">Input Messages</div>
@@ -241,7 +242,7 @@ async def homepage(request: Request):
     model_count = len(config.models)
     stats_section = stats_cards if stats_cards else '<div class="empty-state">No requests processed yet</div>'
     if recent_rows:
-        recent_section = '<table class="recent-table"><thead><tr><th>Time</th><th>Model</th><th>Provider</th><th>S</th><th>Status</th><th>Latency</th><th>Prompt</th><th>Compl</th><th>CacheR</th><th>CacheW</th><th>Input</th><th>Output</th></tr></thead><tbody>' + recent_rows + '</tbody></table>'
+        recent_section = '<table class="recent-table"><thead><tr><th>Time</th><th>Model</th><th>Provider</th><th>S</th><th>Status</th><th>Latency</th><th>Prompt</th><th>Compl</th><th>CacheR</th><th>CacheW</th><th>Input</th><th>Output</th><th></th></tr></thead><tbody>' + recent_rows + '</tbody></table>'
     else:
         recent_section = '<div class="empty-state">No requests processed yet</div>'
 
@@ -479,6 +480,9 @@ header .subtitle {{ color: #999; font-size: 0.85rem; margin-top: 0.15rem; }}
     text-overflow: ellipsis;
     white-space: nowrap;
 }}
+.cell-save {{ text-align: center; width: 40px; }}
+.save-btn {{ text-decoration: none; font-size: 0.85rem; opacity: 0.5; transition: opacity 0.15s; }}
+.save-btn:hover {{ opacity: 1; }}
 .status-ok {{ color: #2d8a2d !important; font-weight: 600; }}
 .status-err {{ color: #c44 !important; font-weight: 600; }}
 .stream-badge {{
@@ -584,10 +588,7 @@ footer {{
 </div>
 
 <div class="section">
-    <div class="section-title">
-        Recent Requests
-        <a href="/recent/download" style="font-size:0.75rem;font-weight:400;color:#2563eb;margin-left:12px;text-decoration:none;border:1px solid #2563eb;border-radius:4px;padding:2px 10px;">&#8595; Download</a>
-    </div>
+    <div class="section-title">Recent Requests</div>
     <div class="recent-table-wrap">
         {recent_section}
     </div>
@@ -628,13 +629,23 @@ function toggleSection(id) {{
 
 
 @app.get("/recent/download")
-async def download_recent(request: Request):
+async def download_recent(request: Request, i: str = ""):
     stats = __import__("src.stats", fromlist=["get_stats"]).get_stats().snapshot()
-    recent_json = json.dumps(stats.get("recent", []), ensure_ascii=False, indent=2)
+    if i:
+        try:
+            idx = int(i)
+            item = stats.get("recent", [])[idx]
+            recent_json = json.dumps(item, ensure_ascii=False, indent=2)
+            filename = f"request-{idx}.json"
+        except (ValueError, IndexError):
+            return Response(status_code=404, content="Not found")
+    else:
+        recent_json = json.dumps(stats.get("recent", []), ensure_ascii=False, indent=2)
+        filename = "recent-requests.json"
     return Response(
         content=recent_json,
         media_type="application/octet-stream",
-        headers={"Content-Disposition": "attachment; filename=recent-requests.json"},
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 
