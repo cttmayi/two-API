@@ -10,6 +10,7 @@ def setup_logging(log_dir: str, level: str = "INFO") -> str:
 
     Returns the path of the created log file.
     """
+    log_dir = os.path.expanduser(log_dir)
     Path(log_dir).mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     log_path = os.path.join(log_dir, f"{timestamp}.log")

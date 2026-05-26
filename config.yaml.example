@@ -43,4 +43,4 @@ alias:
 logging:
   level: INFO
   output: file
-  dir: ./logs
+  dir: ~/.two-api/logs

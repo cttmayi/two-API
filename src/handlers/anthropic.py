@@ -96,63 +96,65 @@ async def messages(request: Request):
                 cache_write_tokens = None
                 # Accumulate content blocks from SSE events
                 blocks: dict[int, dict] = {}  # {index: content_block}
-                for line in sse_lines:
-                    if line.startswith("data:"):
-                        data_str = line[5:].strip()
-                        try:
-                            evt = json.loads(data_str)
-                        except (json.JSONDecodeError, UnicodeDecodeError):
-                            continue
-                        # Collect usage
-                        usage = evt.get("usage", {})
-                        if usage:
-                            if input_tokens is None:
-                                input_tokens = usage.get("input_tokens")
-                            if output_tokens is None:
-                                output_tokens = usage.get("output_tokens")
-                            if cache_read_tokens is None:
-                                cache_read_tokens = usage.get("cache_read_input_tokens")
-                            if cache_write_tokens is None:
-                                cache_write_tokens = usage.get("cache_creation_input_tokens")
-                        # Accumulate content
-                        evt_type = evt.get("type", "")
-                        if evt_type == "content_block_start":
-                            idx = evt.get("index", 0)
-                            cb = evt.get("content_block", {})
-                            cb_type = cb.get("type", "")
-                            if cb_type == "text":
-                                blocks[idx] = {"type": "text", "text": cb.get("text", "")}
-                            elif cb_type == "tool_use":
-                                blocks[idx] = {
-                                    "type": "tool_use",
-                                    "id": cb.get("id", ""),
-                                    "name": cb.get("name", ""),
-                                    "input": cb.get("input", {}),
-                                }
-                        elif evt_type == "content_block_delta":
-                            idx = evt.get("index", 0)
-                            delta = evt.get("delta", {})
-                            if idx in blocks:
-                                b = blocks[idx]
-                                if b["type"] == "text" and delta.get("type") == "text_delta":
-                                    b["text"] += delta.get("text", "")
-                                elif b["type"] == "tool_use" and delta.get("type") == "input_json_delta":
-                                    partial_json = delta.get("partial_json", "")
-                                    if partial_json:
-                                        # Keep as string until the end, then try to parse
-                                        b.setdefault("_input_json", "")
-                                        b["_input_json"] += partial_json
+                if status_code != 200:
+                    output_content = "\n".join(sse_lines)
+                else:
+                    for line in sse_lines:
+                        if line.startswith("data:"):
+                            data_str = line[5:].strip()
+                            try:
+                                evt = json.loads(data_str)
+                            except (json.JSONDecodeError, UnicodeDecodeError):
+                                continue
+                            # Collect usage
+                            usage = evt.get("usage", {})
+                            if usage:
+                                if input_tokens is None:
+                                    input_tokens = usage.get("input_tokens")
+                                if output_tokens is None:
+                                    output_tokens = usage.get("output_tokens")
+                                if cache_read_tokens is None:
+                                    cache_read_tokens = usage.get("cache_read_input_tokens")
+                                if cache_write_tokens is None:
+                                    cache_write_tokens = usage.get("cache_creation_input_tokens")
+                            # Accumulate content
+                            evt_type = evt.get("type", "")
+                            if evt_type == "content_block_start":
+                                idx = evt.get("index", 0)
+                                cb = evt.get("content_block", {})
+                                cb_type = cb.get("type", "")
+                                if cb_type == "text":
+                                    blocks[idx] = {"type": "text", "text": cb.get("text", "")}
+                                elif cb_type == "tool_use":
+                                    blocks[idx] = {
+                                        "type": "tool_use",
+                                        "id": cb.get("id", ""),
+                                        "name": cb.get("name", ""),
+                                        "input": cb.get("input", {}),
+                                    }
+                            elif evt_type == "content_block_delta":
+                                idx = evt.get("index", 0)
+                                delta = evt.get("delta", {})
+                                if idx in blocks:
+                                    b = blocks[idx]
+                                    if b["type"] == "text" and delta.get("type") == "text_delta":
+                                        b["text"] += delta.get("text", "")
+                                    elif b["type"] == "tool_use" and delta.get("type") == "input_json_delta":
+                                        partial_json = delta.get("partial_json", "")
+                                        if partial_json:
+                                            b.setdefault("_input_json", "")
+                                            b["_input_json"] += partial_json
 
-                # Finalize blocks: try to parse tool_use input JSON
-                output_content = []
-                for idx in sorted(blocks.keys()):
-                    b = dict(blocks[idx])
-                    if b["type"] == "tool_use" and "_input_json" in b:
-                        try:
-                            b["input"] = json.loads(b.pop("_input_json"))
-                        except (json.JSONDecodeError, UnicodeDecodeError):
-                            b["input"] = b.pop("_input_json", {})
-                    output_content.append(b)
+                    # Finalize blocks: try to parse tool_use input JSON
+                    output_content = []
+                    for idx in sorted(blocks.keys()):
+                        b = dict(blocks[idx])
+                        if b["type"] == "tool_use" and "_input_json" in b:
+                            try:
+                                b["input"] = json.loads(b.pop("_input_json"))
+                            except (json.JSONDecodeError, UnicodeDecodeError):
+                                b["input"] = b.pop("_input_json", {})
+                        output_content.append(b)
 
                 logger.info(
                     "proxy_request",
@@ -197,6 +199,9 @@ async def messages(request: Request):
                 output_content = resp_body.get("content")
             except (json.JSONDecodeError, UnicodeDecodeError):
                 pass
+
+            if resp.status_code != 200:
+                output_content = resp.body.decode("utf-8", errors="replace")
 
             logger.info(
                 "proxy_request",

@@ -7,7 +7,10 @@
 ## 安装
 
 ```bash
-# 从 GitHub 直接安装
+# pipx 安装（推荐，macOS/Linux 通用）
+pipx install git+https://github.com/cttmayi/two-API.git
+
+# pip 安装（需在虚拟环境中）
 pip install git+https://github.com/cttmayi/two-API.git
 
 # 本地开发安装
@@ -16,7 +19,7 @@ pip install -e ".[dev]"
 
 ## 配置
 
-复制 `config.yaml.example` 为 `config.yaml`（已加入 `.gitignore`），编辑模型和后端信息：
+复制 `config.yaml.example` 为 `~/.two-api/config.yaml`（首次使用需 `mkdir -p ~/.two-api`），编辑模型和后端信息：
 
 ```yaml
 server:
@@ -45,7 +48,7 @@ models:
 logging:
   level: INFO
   output: file
-  dir: ./logs
+  dir: ~/.two-api/logs
 ```
 
 - `alias`: 全局模型别名（可选），请求中 `model` 字段会先在此映射中查找，匹配则替换后走正常路由。用于集中管理别名，不改 models 配置就能切换
@@ -60,8 +63,7 @@ logging:
 安装后通过 CLI 启动：
 
 ```bash
-pip install -e .
-two-api                    # 默认读取 ./config.yaml
+two-api                    # 默认读取 ~/.two-api/config.yaml
 two-api /path/to/config.yaml
 two-api --host 127.0.0.1 --port 9000
 ```

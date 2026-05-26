@@ -1,4 +1,5 @@
 from pydantic import BaseModel, model_validator, Field
+import os
 import yaml
 
 
@@ -10,7 +11,7 @@ class ServerConfig(BaseModel):
 class LoggingConfig(BaseModel):
     level: str = "INFO"
     output: str = "file"
-    dir: str = "./logs"
+    dir: str = "~/.two-api/logs"
 
 
 class ModelEntry(BaseModel):
@@ -49,6 +50,7 @@ class Config(BaseModel):
 
 
 def load_config(path: str) -> Config:
+    path = os.path.expanduser(path)
     with open(path, "r") as f:
         data = yaml.safe_load(f)
     return Config(**data)

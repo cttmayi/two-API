@@ -50,7 +50,7 @@ class TestLoggingConfig:
         cfg = LoggingConfig()
         assert cfg.level == "INFO"
         assert cfg.output == "file"
-        assert cfg.dir == "./logs"
+        assert cfg.dir == "~/.two-api/logs"
 
 
 class TestLoadConfig:

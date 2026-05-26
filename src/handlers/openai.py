@@ -97,48 +97,51 @@ async def chat_completions(request: Request):
                 # Accumulate output from deltas
                 output_text = ""
                 tool_calls_by_idx: dict[int, dict] = {}
-                for line in sse_lines:
-                    if not line.startswith("data:"):
-                        continue
-                    data_str = line[5:].strip()
-                    if data_str == "[DONE]":
-                        continue
-                    try:
-                        data = json.loads(data_str)
-                    except (json.JSONDecodeError, UnicodeDecodeError):
-                        continue
-                    usage = data.get("usage", {})
-                    if usage:
-                        if prompt_tokens is None:
-                            prompt_tokens = usage.get("prompt_tokens")
-                        if completion_tokens is None:
-                            completion_tokens = usage.get("completion_tokens")
-                        if cache_read_tokens is None:
-                            cache_read_tokens = usage.get("prompt_tokens_details", {}).get("cached_tokens")
-                    choices = data.get("choices", [])
-                    if choices:
-                        delta = choices[0].get("delta", {})
-                        if delta.get("content"):
-                            output_text += delta["content"]
-                        for tc in delta.get("tool_calls", []):
-                            idx = tc.get("index", 0)
-                            if idx not in tool_calls_by_idx:
-                                tool_calls_by_idx[idx] = {
-                                    "id": tc.get("id") or "",
-                                    "type": "function",
-                                    "function": {"name": "", "arguments": ""},
-                                }
-                            t = tool_calls_by_idx[idx]
-                            if tc.get("id"):
-                                t["id"] = tc["id"]
-                            if tc.get("function", {}).get("name"):
-                                t["function"]["name"] += tc["function"]["name"]
-                            if tc.get("function", {}).get("arguments"):
-                                t["function"]["arguments"] += tc["function"]["arguments"]
+                if status_code != 200:
+                    output_content = "\n".join(sse_lines)
+                else:
+                    for line in sse_lines:
+                        if not line.startswith("data:"):
+                            continue
+                        data_str = line[5:].strip()
+                        if data_str == "[DONE]":
+                            continue
+                        try:
+                            data = json.loads(data_str)
+                        except (json.JSONDecodeError, UnicodeDecodeError):
+                            continue
+                        usage = data.get("usage", {})
+                        if usage:
+                            if prompt_tokens is None:
+                                prompt_tokens = usage.get("prompt_tokens")
+                            if completion_tokens is None:
+                                completion_tokens = usage.get("completion_tokens")
+                            if cache_read_tokens is None:
+                                cache_read_tokens = usage.get("prompt_tokens_details", {}).get("cached_tokens")
+                        choices = data.get("choices", [])
+                        if choices:
+                            delta = choices[0].get("delta", {})
+                            if delta.get("content"):
+                                output_text += delta["content"]
+                            for tc in delta.get("tool_calls", []):
+                                idx = tc.get("index", 0)
+                                if idx not in tool_calls_by_idx:
+                                    tool_calls_by_idx[idx] = {
+                                        "id": tc.get("id") or "",
+                                        "type": "function",
+                                        "function": {"name": "", "arguments": ""},
+                                    }
+                                t = tool_calls_by_idx[idx]
+                                if tc.get("id"):
+                                    t["id"] = tc["id"]
+                                if tc.get("function", {}).get("name"):
+                                    t["function"]["name"] += tc["function"]["name"]
+                                if tc.get("function", {}).get("arguments"):
+                                    t["function"]["arguments"] += tc["function"]["arguments"]
 
-                output_content: dict = {"content": output_text}
-                if tool_calls_by_idx:
-                    output_content["tool_calls"] = [tool_calls_by_idx[i] for i in sorted(tool_calls_by_idx)]
+                    output_content: dict = {"content": output_text}
+                    if tool_calls_by_idx:
+                        output_content["tool_calls"] = [tool_calls_by_idx[i] for i in sorted(tool_calls_by_idx)]
 
                 logger.info(
                     "proxy_request",
@@ -178,6 +181,9 @@ async def chat_completions(request: Request):
                 output_content = resp_body.get("choices", [{}])[0].get("message")
             except (json.JSONDecodeError, UnicodeDecodeError):
                 pass
+
+            if resp.status_code != 200:
+                output_content = resp.body.decode("utf-8", errors="replace")
 
             logger.info(
                 "proxy_request",

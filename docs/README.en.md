@@ -5,7 +5,10 @@ A transparent LLM API proxy supporting OpenAI-compatible and Anthropic-compatibl
 ## Installation
 
 ```bash
-# From GitHub
+# pipx (recommended for macOS/Linux)
+pipx install git+https://github.com/cttmayi/two-API.git
+
+# pip (requires a virtual environment)
 pip install git+https://github.com/cttmayi/two-API.git
 
 # Local development
@@ -14,7 +17,7 @@ pip install -e ".[dev]"
 
 ## Configuration
 
-Copy `config.yaml.example` to `config.yaml` (added to `.gitignore`), then edit the model and backend info:
+Copy `config.yaml.example` to `~/.two-api/config.yaml` (first time: `mkdir -p ~/.two-api`), then edit the model and backend info:
 
 ```yaml
 server:
@@ -44,7 +47,7 @@ models:
 logging:
   level: INFO
   output: file
-  dir: ./logs
+  dir: ~/.two-api/logs
 ```
 
 - `alias`: Global model aliases (optional). The `model` field in requests is looked up in this mapping first; if matched, the value replaces the model name before normal routing. Useful for centralized alias management without modifying the models config.
@@ -59,8 +62,7 @@ logging:
 Start via CLI after installation:
 
 ```bash
-pip install -e .
-two-api                    # defaults to ./config.yaml
+two-api                    # defaults to ~/.two-api/config.yaml
 two-api /path/to/config.yaml
 two-api --host 127.0.0.1 --port 9000
 ```

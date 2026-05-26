@@ -11,7 +11,7 @@ from src.logging_setup import setup_logging
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    config = load_config("config.yaml")
+    config = load_config("~/.two-api/config.yaml")
     app.state.config = config
     app.state.router = ModelRouter(config.models)
     log_path = setup_logging(config.logging.dir, config.logging.level)
