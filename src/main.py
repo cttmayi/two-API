@@ -110,6 +110,20 @@ async def homepage(request: Request):
             </div>
         </div>"""
 
+    def _tool_input_summary(input_val):
+        """Extract a short summary from a tool_use input dict."""
+        if not isinstance(input_val, dict):
+            return ""
+        for key in ("command", "file_path", "subject", "description", "query", "pattern", "prompt"):
+            v = input_val.get(key)
+            if isinstance(v, str) and v.strip():
+                return v.strip()[:80]
+        for v in input_val.values():
+            if isinstance(v, str) and v.strip():
+                return v.strip()[:80]
+        return ""
+
+
     recent_rows = ""
     for i, r in enumerate(stats.get("recent", [])):
         detail_id = f"detail-{i}"
@@ -160,7 +174,12 @@ async def homepage(request: Request):
                     if t == "text":
                         parts.append(str(block.get("text", "")))
                     elif t == "tool_use":
-                        parts.append("[tool_use: " + str(block.get("name", "")) + "]")
+                        name = str(block.get("name", ""))
+                        inp = _tool_input_summary(block.get("input"))
+                        if inp:
+                            parts.append("[tool: " + name + " " + inp + "]")
+                        else:
+                            parts.append("[tool: " + name + "]")
             output_preview = " ".join(parts)
         elif isinstance(output, dict):
             # OpenAI: dict with content and optional tool_calls
@@ -170,7 +189,17 @@ async def homepage(request: Request):
             for tc in output.get("tool_calls", []):
                 if isinstance(tc, dict):
                     fn = tc.get("function", {})
-                    parts.append("[tool: " + str(fn.get("name", "")) + "]")
+                    fn_name = str(fn.get("name", ""))
+                    args_str = fn.get("arguments", "")
+                    if isinstance(args_str, str) and args_str.strip():
+                        try:
+                            args_obj = json.loads(args_str)
+                            inp = _tool_input_summary(args_obj)
+                            if inp:
+                                fn_name += " " + inp
+                        except (json.JSONDecodeError, UnicodeDecodeError):
+                            pass
+                    parts.append("[tool: " + fn_name + "]")
             output_preview = " ".join(parts)
         output_preview = _html.escape(output_preview[:120])
 
