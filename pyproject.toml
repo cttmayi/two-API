@@ -5,6 +5,23 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "two-api"
 version = "0.1.0"
+description = "透明 LLM API 代理，支持 OpenAI / Anthropic 兼容 API，按模型名称路由到不同后端"
+readme = "README.md"
+license = "MIT"
+authors = [
+    {name = "two-API contributors"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+    "Topic :: Internet :: Proxy Servers",
+]
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",
@@ -23,6 +40,9 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/twotwo/two-API"
 
 [tool.setuptools.packages.find]
 where = ["."]
