@@ -7,9 +7,6 @@
 ## 安装
 
 ```bash
-# 从 PyPI 安装
-pip install two-api
-
 # 从 GitHub 直接安装
 pip install git+https://github.com/cttmayi/two-API.git
 
