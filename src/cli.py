@@ -25,7 +25,10 @@ def main():
 
     print(f"Starting two-API on http://{host}:{port}")
     print(f"Config: {args.config}")
-    uvicorn.run("src.main:app", host=host, port=port, log_level="info", reload=True, reload_dirs="src")
+
+    # Auto-detect development mode: enable reload when running from project root
+    reload = os.path.isdir("src") and os.path.isfile("pyproject.toml")
+    uvicorn.run("src.main:app", host=host, port=port, log_level="info", reload=reload)
 
 
 if __name__ == "__main__":
