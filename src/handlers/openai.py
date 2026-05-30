@@ -214,6 +214,7 @@ async def chat_completions(request: Request):
         return JSONResponse(status_code=502, content={"error": "Backend unreachable"})
 
 
+@router.get("/v1/models")
 @router.get("/models")
 async def list_models(request: Request):
     model_router = _get_router(request)
