@@ -28,6 +28,8 @@ models:
       - deepseek-chat
     openai_base_url: https://api.deepseek.com/v1
     api_key: sk-your-deepseek-key
+    # max_tokens 不传时不注入, 配置后客户端未传此字段时代理自动注入
+    # max_tokens: 4096
 
   # 火山方舟 (OpenAI 兼容, 非 /v1 路径)
   - names:

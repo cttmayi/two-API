@@ -39,6 +39,7 @@ models:
       - claude-sonnet-4-6
     anthropic_base_url: https://api.anthropic.com/v1
     api_key: sk-ant-your-anthropic-key
+    # max_tokens: 8192       # 可选，客户端未传时代理自动注入
 
   # 全局别名: 请求中 model 字段先查此映射, 匹配则替换后再路由
   alias:
@@ -57,6 +58,7 @@ logging:
   - 别名映射 `fast: gpt-4o-mini`：客户端用 `"fast"` 请求，代理转发为 `"gpt-4o-mini"`
 - `openai_base_url` / `anthropic_base_url`: 至少配置一个，代理将请求路径拼接到此 URL
 - `api_key`: 可选，配置后将作为 `Authorization: Bearer <key>` 注入到后端请求
+- `max_tokens`: 可选，客户端请求未传 `max_tokens` 时代理自动注入此值。不配置则不注入，不影响远端有传的情况
 
 ## 运行
 

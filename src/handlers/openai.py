@@ -60,6 +60,11 @@ async def chat_completions(request: Request):
         body_json["model"] = backend_model
         body_bytes = json.dumps(body_json).encode("utf-8")
 
+    # Inject default max_tokens if not provided by client
+    if "max_tokens" not in body_json and entry.max_tokens is not None:
+        body_json["max_tokens"] = entry.max_tokens
+        body_bytes = json.dumps(body_json).encode("utf-8")
+
     start = time.perf_counter()
     streaming = body_json.get("stream", False)
 
@@ -249,6 +254,11 @@ async def embeddings(request: Request):
     entry, backend_model = match_result
     if backend_model != model_name:
         body_json["model"] = backend_model
+        body_bytes = json.dumps(body_json).encode("utf-8")
+
+    # Inject default max_tokens if not provided by client
+    if "max_tokens" not in body_json and entry.max_tokens is not None:
+        body_json["max_tokens"] = entry.max_tokens
         body_bytes = json.dumps(body_json).encode("utf-8")
 
     resp = await forward_non_stream(request, entry.openai_base_url, entry.api_key, body=body_bytes, )

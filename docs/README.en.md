@@ -37,6 +37,7 @@ models:
       - claude-sonnet-4-6
     anthropic_base_url: https://api.anthropic.com/v1
     api_key: sk-ant-your-anthropic-key
+    # max_tokens: 8192       # optional, injects default when client omits max_tokens
 
   # Global aliases: the model field in requests is first looked up in this
   # mapping; if matched, the value replaces the model name before routing

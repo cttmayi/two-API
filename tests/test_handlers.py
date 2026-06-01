@@ -115,6 +115,61 @@ class TestOpenAIEndpoints:
         assert data["choices"][0]["message"]["content"] == "ok"
 
     @pytest.mark.asyncio
+    async def test_chat_completions_max_tokens_default(self, client, app_with_models):
+        """When client omits max_tokens and entry has max_tokens set, inject default."""
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=["gpt-4o"], openai_base_url="https://api.openai.com",
+                           api_key="sk-test", max_tokens=4096),
+            ],
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            body = json.loads(request.content)
+            assert body["max_tokens"] == 4096, "Should inject default max_tokens"
+            return httpx.Response(200, json={
+                "choices": [{"message": {"content": "ok"}}],
+            })
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/chat/completions", json={
+            "model": "gpt-4o",
+            "messages": [{"role": "user", "content": "hi"}],
+        })
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_chat_completions_max_tokens_client_override(self, client, app_with_models):
+        """When client provides max_tokens, entry's default should not override."""
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=["gpt-4o"], openai_base_url="https://api.openai.com",
+                           api_key="sk-test", max_tokens=4096),
+            ],
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            body = json.loads(request.content)
+            assert body["max_tokens"] == 2048, "Client value should be preserved"
+            return httpx.Response(200, json={
+                "choices": [{"message": {"content": "ok"}}],
+            })
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/chat/completions", json={
+            "model": "gpt-4o",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 2048,
+        })
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
     async def test_chat_completions_wrong_endpoint(self, client):
         """claude-sonnet-4-6 has no openai_base_url, so requesting via OpenAI endpoint should fail."""
         resp = await client.post("/chat/completions", json={
@@ -189,6 +244,61 @@ class TestAnthropicEndpoints:
         assert resp.status_code == 200
         data = resp.json()
         assert data["content"][0]["text"] == "hello"
+
+    @pytest.mark.asyncio
+    async def test_messages_max_tokens_default(self, client, app_with_models):
+        """When client omits max_tokens and entry has max_tokens set, inject default."""
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=["claude-sonnet-4-6"], anthropic_base_url="https://api.anthropic.com",
+                           api_key="sk-ant", max_tokens=8192),
+            ],
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            body = json.loads(request.content)
+            assert body["max_tokens"] == 8192, "Should inject default max_tokens"
+            return httpx.Response(200, json={
+                "content": [{"type": "text", "text": "ok"}],
+            })
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/messages", json={
+            "model": "claude-sonnet-4-6",
+            "messages": [{"role": "user", "content": "hi"}],
+        })
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_messages_max_tokens_client_override(self, client, app_with_models):
+        """When client provides max_tokens, entry's default should not override."""
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=["claude-sonnet-4-6"], anthropic_base_url="https://api.anthropic.com",
+                           api_key="sk-ant", max_tokens=8192),
+            ],
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            body = json.loads(request.content)
+            assert body["max_tokens"] == 4096, "Client value should be preserved"
+            return httpx.Response(200, json={
+                "content": [{"type": "text", "text": "ok"}],
+            })
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/messages", json={
+            "model": "claude-sonnet-4-6",
+            "max_tokens": 4096,
+            "messages": [{"role": "user", "content": "hi"}],
+        })
+        assert resp.status_code == 200
 
     @pytest.mark.asyncio
     async def test_messages_wrong_endpoint(self, client):
