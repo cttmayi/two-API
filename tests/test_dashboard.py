@@ -73,6 +73,10 @@ async def test_homepage_renders_model_colored_hourly_chart_segments():
     assert "Token Details" in resp.text
     assert "Avg Latency" in resp.text
     assert "Per Output Token" in resp.text
+    assert "Cache Read: ' + fmtMetric(item.cache_read_tokens)" in resp.text
+    assert "Cache Write: ' + fmtMetric(item.cache_write_tokens)" in resp.text
+    assert "CR ' + fmtMetric(data.cache_read_tokens)" in resp.text
+    assert "CW ' + fmtMetric(data.cache_write_tokens)" in resp.text
     assert "function fmtDuration" in resp.text
     assert "white-space: nowrap" in resp.text
 

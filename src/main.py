@@ -757,12 +757,15 @@ function tooltipHtml(item, metric) {{
         return '<div><span style="color:' + colorForModel(name) + '">●</span> ' + name + ': ' +
             fmtMetric(data[metric]) + ' / total ' + fmtMetric(data.total_tokens) +
             ' (P ' + fmtMetric(data.prompt_tokens) + ', C ' + fmtMetric(data.completion_tokens) +
+            ', CR ' + fmtMetric(data.cache_read_tokens) + ', CW ' + fmtMetric(data.cache_write_tokens) +
             ', Avg ' + fmtDuration(data.avg_latency_ms) + ', Out ' + fmtDuration(data.latency_per_output_token_ms) + '/tok)</div>';
     }}).join('');
     return '<strong>Token Details</strong><br>' +
         item.hour + '<br>' +
         'Requests: ' + fmtMetric(item.requests) + '<br>' +
         'Total Tokens: ' + fmtMetric(item[metric]) + '<br>' +
+        'Cache Read: ' + fmtMetric(item.cache_read_tokens) + '<br>' +
+        'Cache Write: ' + fmtMetric(item.cache_write_tokens) + '<br>' +
         'Avg Latency: ' + fmtDuration(item.avg_latency_ms) + '<br>' +
         'Per Output Token: ' + fmtDuration(item.latency_per_output_token_ms) + '/tok<hr style="border:0;border-top:1px solid rgba(255,255,255,0.18);margin:6px 0">' + rows;
 }}
