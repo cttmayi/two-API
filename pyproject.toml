@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "two-api"
-version = "0.2.4"
+version = "0.2.5"
 description = "透明 LLM API 代理，支持 OpenAI / Anthropic 兼容 API，按模型名称路由到不同后端"
 readme = "README.md"
 license = "MIT"

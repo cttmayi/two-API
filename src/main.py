@@ -1,11 +1,17 @@
 from contextlib import asynccontextmanager
 import html as _html
 import json
+import os
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, Response
 from src.config import load_config
 from src.router import ModelRouter
 from src.logging_setup import setup_logging
+from src.stats import get_stats, init_stats
+
+
+def usage_path_for_log_dir(log_dir: str) -> str:
+    return os.path.join(os.path.dirname(os.path.expanduser(log_dir)), "usage.json")
 
 
 @asynccontextmanager
@@ -16,6 +22,7 @@ async def lifespan(app: FastAPI):
     app.state.router = ModelRouter(config.models)
     log_path = setup_logging(config.logging.dir, config.logging.level)
     app.state.log_path = log_path
+    init_stats(usage_path_for_log_dir(config.logging.dir))
     import structlog
     logger = structlog.get_logger()
     logger.info("proxy_startup", log_path=log_path, host=config.server.host, port=config.server.port)
@@ -43,7 +50,7 @@ def _fmt(n: int | None) -> str:
 @app.get("/", response_class=HTMLResponse)
 async def homepage(request: Request):
     config = request.app.state.config
-    stats = __import__("src.stats", fromlist=["get_stats"]).get_stats().snapshot()
+    stats = get_stats().snapshot()
 
     config_rows = ""
     for entry in config.models:
@@ -241,11 +248,11 @@ async def homepage(request: Request):
     uptime_s = stats["uptime_seconds"] % 60
     total_requests = stats["total_requests"]
     model_count = len(config.models)
-    stats_section = stats_cards if stats_cards else '<div class="empty-state">No requests processed yet</div>'
     if recent_rows:
         recent_section = '<table class="recent-table"><thead><tr><th>Time</th><th>Model</th><th>Provider</th><th>S</th><th>Status</th><th>Latency</th><th>Prompt</th><th>Compl</th><th>CacheR</th><th>CacheW</th><th>Input</th><th>Output</th><th></th></tr></thead><tbody>' + recent_rows + '</tbody></table>'
     else:
         recent_section = '<div class="empty-state">No requests processed yet</div>'
+    hourly_json = json.dumps(stats.get("hourly", []), ensure_ascii=False).replace("</", "<\\/")
 
     html = """<!DOCTYPE html>
 <html lang="zh-CN">
@@ -417,6 +424,106 @@ header .subtitle {{ color: #999; font-size: 0.85rem; margin-top: 0.15rem; }}
     text-transform: uppercase;
     letter-spacing: 0.3px;
 }}
+.hourly-panel {{
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    margin-top: 1rem;
+    padding: 1rem 1.25rem;
+}}
+.hourly-header {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}}
+.hourly-title {{ font-size: 0.9rem; font-weight: 700; color: #1a1a2e; }}
+.hourly-chart {{
+    height: 220px;
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    border-left: 1px solid #eef0f5;
+    border-bottom: 1px solid #eef0f5;
+    padding: 16px 10px 24px 10px;
+    overflow-x: auto;
+}}
+.hourly-bar-wrap {{
+    min-width: 42px;
+    flex: 1;
+    max-width: 72px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 6px;
+}}
+.hourly-bar-value {{
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    font-size: 0.68rem;
+    color: #888;
+    min-height: 12px;
+}}
+.hourly-bar {{
+    width: 100%;
+    min-height: 2px;
+    border-radius: 6px 6px 0 0;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.15s;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column-reverse;
+    position: relative;
+}}
+.hourly-bar:hover {{ opacity: 0.9; transform: translateY(-2px); }}
+.hourly-segment {{ width: 100%; min-height: 2px; }}
+.hourly-tooltip {{
+    position: fixed;
+    display: none;
+    z-index: 10;
+    min-width: 220px;
+    max-width: 520px;
+    white-space: nowrap;
+    background: rgba(26,26,46,0.96);
+    color: #fff;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    pointer-events: none;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+}}
+.hourly-legend {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 1rem;
+    margin-top: 0.85rem;
+}}
+.hourly-legend-item {{ display: inline-flex; align-items: center; gap: 6px; color: #666; font-size: 0.75rem; }}
+.hourly-legend-color {{ width: 10px; height: 10px; border-radius: 3px; display: inline-block; }}
+.hourly-bar-label {{
+    font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    font-size: 0.68rem;
+    color: #999;
+    white-space: nowrap;
+}}
+.hourly-detail {{
+    margin-top: 1rem;
+    padding: 0.85rem 1rem;
+    border-radius: 8px;
+    background: #f8f9fb;
+    color: #555;
+    font-size: 0.8rem;
+}}
+.hourly-detail-grid {{
+    display: grid;
+    grid-template-columns: repeat(7, minmax(90px, 1fr));
+    gap: 0.75rem;
+}}
+.hourly-detail-label {{ font-size: 0.68rem; color: #999; text-transform: uppercase; letter-spacing: 0.3px; }}
+.hourly-detail-value {{ font-weight: 700; color: #1a1a2e; margin-top: 2px; }}
 
 .empty-state {{
     text-align: center;
@@ -578,13 +685,14 @@ footer {{
 </div>
 
 <div class="section">
-    <div class="section-title" style="cursor:pointer; user-select:none;" onclick="toggleSection('stats-body')">
-        <span id="stats-arrow" style="display:inline-block;transition:transform 0.2s;margin-right:6px;transform:rotate(90deg);">&#9654;</span>Usage Statistics
-    </div>
-    <div id="stats-body">
-    <div class="model-cards">
-        {stats_section}
-    </div>
+    <div class="hourly-panel">
+        <div class="hourly-header">
+            <div class="hourly-title">Hourly Token Usage</div>
+        </div>
+        <div id="hourly-chart" class="hourly-chart"></div>
+        <div id="hourly-tooltip" class="hourly-tooltip"></div>
+        <div id="hourly-legend" class="hourly-legend"></div>
+        <div id="hourly-detail" class="hourly-detail">Click a bar to view hourly details.</div>
     </div>
 </div>
 
@@ -596,6 +704,135 @@ footer {{
 </div>
 
 <script>
+var hourlyUsageData = {hourly_json};
+function fmtMetric(n) {{
+    n = n || 0;
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
+    if (n >= 1000) return (n / 1000).toFixed(1) + "K";
+    if (n % 1) return n.toFixed(1);
+    return String(n);
+}}
+function fmtDuration(ms) {{
+    ms = ms || 0;
+    if (ms >= 1000) return (ms / 1000).toFixed(1) + "s";
+    if (ms % 1) return ms.toFixed(1) + "ms";
+    return String(ms) + "ms";
+}}
+function hourlyLabel(hour) {{
+    return (hour || "").slice(11, 16) || hour;
+}}
+function colorForModel(model) {{
+    var colors = ["#2563eb", "#16a34a", "#dc2626", "#9333ea", "#ea580c", "#0891b2", "#be123c", "#4f46e5", "#65a30d", "#c026d3"];
+    var hash = 0;
+    for (var i = 0; i < model.length; i++) hash = ((hash << 5) - hash + model.charCodeAt(i)) | 0;
+    return colors[Math.abs(hash) % colors.length];
+}}
+function modelNames() {{
+    var names = {{}};
+    hourlyUsageData.forEach(function(item) {{
+        Object.keys(item.models || {{}}).forEach(function(name) {{ names[name] = true; }});
+    }});
+    return Object.keys(names).sort();
+}}
+function metricValue(item, metric) {{
+    return item[metric] || 0;
+}}
+function modelMetricValue(item, model, metric) {{
+    var modelData = (item.models || {{}})[model] || {{}};
+    return modelData[metric] || 0;
+}}
+function renderHourlyLegend() {{
+    var legend = document.getElementById("hourly-legend");
+    legend.innerHTML = "";
+    modelNames().forEach(function(name) {{
+        var item = document.createElement("span");
+        item.className = "hourly-legend-item";
+        item.innerHTML = '<span class="hourly-legend-color" style="background:' + colorForModel(name) + '"></span>' + name;
+        legend.appendChild(item);
+    }});
+}}
+function tooltipHtml(item, metric) {{
+    var rows = Object.keys(item.models || {{}}).sort().map(function(name) {{
+        var data = item.models[name] || {{}};
+        return '<div><span style="color:' + colorForModel(name) + '">●</span> ' + name + ': ' +
+            fmtMetric(data[metric]) + ' / total ' + fmtMetric(data.total_tokens) +
+            ' (P ' + fmtMetric(data.prompt_tokens) + ', C ' + fmtMetric(data.completion_tokens) +
+            ', Avg ' + fmtDuration(data.avg_latency_ms) + ', Out ' + fmtDuration(data.latency_per_output_token_ms) + '/tok)</div>';
+    }}).join('');
+    return '<strong>Token Details</strong><br>' +
+        item.hour + '<br>' +
+        'Requests: ' + fmtMetric(item.requests) + '<br>' +
+        'Total Tokens: ' + fmtMetric(item[metric]) + '<br>' +
+        'Avg Latency: ' + fmtDuration(item.avg_latency_ms) + '<br>' +
+        'Per Output Token: ' + fmtDuration(item.latency_per_output_token_ms) + '/tok<hr style="border:0;border-top:1px solid rgba(255,255,255,0.18);margin:6px 0">' + rows;
+}}
+function showTooltip(event, html) {{
+    var tooltip = document.getElementById("hourly-tooltip");
+    tooltip.innerHTML = html;
+    tooltip.style.display = "block";
+    tooltip.style.left = Math.min(event.clientX + 12, window.innerWidth - tooltip.offsetWidth - 12) + "px";
+    tooltip.style.top = Math.min(event.clientY + 12, window.innerHeight - tooltip.offsetHeight - 12) + "px";
+}}
+function hideTooltip() {{
+    document.getElementById("hourly-tooltip").style.display = "none";
+}}
+function showHourlyDetail(item) {{
+    var detail = document.getElementById("hourly-detail");
+    detail.innerHTML = '<div class="hourly-detail-grid">' +
+        '<div><div class="hourly-detail-label">Hour</div><div class="hourly-detail-value">' + item.hour + '</div></div>' +
+        '<div><div class="hourly-detail-label">Requests</div><div class="hourly-detail-value">' + fmtMetric(item.requests) + '</div></div>' +
+        '<div><div class="hourly-detail-label">Prompt</div><div class="hourly-detail-value">' + fmtMetric(item.prompt_tokens) + '</div></div>' +
+        '<div><div class="hourly-detail-label">Completion</div><div class="hourly-detail-value">' + fmtMetric(item.completion_tokens) + '</div></div>' +
+        '<div><div class="hourly-detail-label">Cache Read</div><div class="hourly-detail-value">' + fmtMetric(item.cache_read_tokens) + '</div></div>' +
+        '<div><div class="hourly-detail-label">Cache Write</div><div class="hourly-detail-value">' + fmtMetric(item.cache_write_tokens) + '</div></div>' +
+        '<div><div class="hourly-detail-label">Total</div><div class="hourly-detail-value">' + fmtMetric(item.total_tokens) + '</div></div>' +
+        '</div>';
+}}
+function renderHourlyChart() {{
+    var chart = document.getElementById("hourly-chart");
+    var metric = "total_tokens";
+    chart.innerHTML = "";
+    if (!hourlyUsageData.length) {{
+        chart.innerHTML = '<div class="empty-state" style="box-shadow:none;width:100%;padding:2rem;">No hourly usage yet</div>';
+        document.getElementById("hourly-detail").textContent = "No hourly usage yet.";
+        return;
+    }}
+    var maxValue = Math.max.apply(null, hourlyUsageData.map(function(item) {{ return metricValue(item, metric); }})) || 1;
+    hourlyUsageData.forEach(function(item) {{
+        var value = metricValue(item, metric);
+        var height = Math.max(2, Math.round((value / maxValue) * 150));
+        var bar = document.createElement("div");
+        bar.className = "hourly-bar";
+        bar.style.height = height + "px";
+        Object.keys(item.models || {{}}).sort().forEach(function(model) {{
+            var modelValue = modelMetricValue(item, model, metric);
+            if (!modelValue) return;
+            var segment = document.createElement("div");
+            segment.className = "hourly-segment";
+            segment.style.height = Math.max(2, Math.round((modelValue / value) * height)) + "px";
+            segment.style.background = colorForModel(model);
+            bar.appendChild(segment);
+        }});
+        if (!bar.children.length) {{
+            var segment = document.createElement("div");
+            segment.className = "hourly-segment";
+            segment.style.height = height + "px";
+            segment.style.background = "#2563eb";
+            bar.appendChild(segment);
+        }}
+        var wrap = document.createElement("div");
+        wrap.className = "hourly-bar-wrap";
+        wrap.innerHTML = '<div class="hourly-bar-value">' + fmtMetric(value) + '</div>';
+        wrap.appendChild(bar);
+        wrap.insertAdjacentHTML('beforeend', '<div class="hourly-bar-label">' + hourlyLabel(item.hour) + '</div>');
+        wrap.onclick = function() {{ showHourlyDetail(item); }};
+        wrap.onmousemove = function(event) {{ showTooltip(event, tooltipHtml(item, metric)); }};
+        wrap.onmouseleave = hideTooltip;
+        chart.appendChild(wrap);
+    }});
+    renderHourlyLegend();
+    showHourlyDetail(hourlyUsageData[hourlyUsageData.length - 1]);
+}}
 function toggleDetail(id) {{
     var el = document.getElementById(id);
     if (el.style.display === "none") {{
@@ -615,6 +852,7 @@ function toggleSection(id) {{
         arrow.style.transform = "rotate(0deg)";
     }}
 }}
+renderHourlyChart();
 </script>
 
 <footer>two-API &copy; 2026</footer>
@@ -623,15 +861,15 @@ function toggleSection(id) {{
 </html>""".format(
         uptime_m=uptime_m, uptime_s=uptime_s,
         total_requests=total_requests, model_count=model_count,
-        config_rows=config_rows, stats_section=stats_section,
-        recent_section=recent_section,
+        config_rows=config_rows,
+        recent_section=recent_section, hourly_json=hourly_json,
     )
     return html
 
 
 @app.get("/recent/download")
 async def download_recent(request: Request, i: str = ""):
-    stats = __import__("src.stats", fromlist=["get_stats"]).get_stats().snapshot()
+    stats = get_stats().snapshot()
     if i:
         try:
             idx = int(i)
