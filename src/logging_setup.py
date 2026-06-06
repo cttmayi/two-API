@@ -75,6 +75,14 @@ def setup_logging(log_dir: str, level: str = "INFO") -> str:
     root_logger.addHandler(file_handler)
     root_logger.addHandler(console_handler)
 
+    for logger_name in ("uvicorn.error", "uvicorn.access"):
+        uvicorn_logger = logging.getLogger(logger_name)
+        uvicorn_logger.handlers.clear()
+        uvicorn_logger.setLevel(level_num)
+        uvicorn_logger.addHandler(file_handler)
+        uvicorn_logger.addHandler(console_handler)
+        uvicorn_logger.propagate = False
+
     return log_path
 
 

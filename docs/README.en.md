@@ -105,6 +105,17 @@ curl http://0.0.0.0:8080/chat/completions \
   }'
 ```
 
+**Responses API:**
+
+```bash
+curl http://0.0.0.0:8080/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o",
+    "input": "Hello, who are you?"
+  }'
+```
+
 **List Models:**
 
 ```bash
@@ -173,8 +184,9 @@ Statistics are recorded for both streaming and non-streaming requests. Cache hit
 | Endpoint | Method | Description |
 |---|---|---|
 | `/` | GET | Homepage with config, usage stats, and recent requests |
-| `/chat/completions` | POST | OpenAI-compatible chat completions |
-| `/models` | GET | List available OpenAI-compatible models |
+| `/chat/completions` | POST | OpenAI-compatible Chat Completions |
+| `/responses`, `/v1/responses` | POST | OpenAI-compatible Responses API |
+| `/models`, `/v1/models` | GET | List available OpenAI-compatible models |
 | `/embeddings` | POST | OpenAI-compatible embeddings |
 | `/messages`, `/v1/messages` | POST | Anthropic-compatible messages |
 | `/recent/download` | GET | Download recent request records (use `?i=N` for a single entry) |

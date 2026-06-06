@@ -211,6 +211,81 @@ class TestOpenAIEndpoints:
         assert "internal server error" in resp.text
 
     @pytest.mark.asyncio
+    async def test_responses_non_stream(self, client):
+        async def backend_handler(request):
+            assert request.url.path == "/responses"
+            body = json.loads(request.content)
+            assert body["model"] == "gpt-4o"
+            assert body["input"] == "hello"
+            assert request.headers["authorization"] == "Bearer sk-test"
+            return httpx.Response(200, json={
+                "id": "resp_123",
+                "output_text": "hi there",
+                "usage": {"input_tokens": 7, "output_tokens": 3},
+            })
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/responses", json={"model": "gpt-4o", "input": "hello"})
+        assert resp.status_code == 200
+        assert resp.json()["output_text"] == "hi there"
+
+    @pytest.mark.asyncio
+    async def test_v1_responses_non_stream(self, client):
+        async def backend_handler(request):
+            assert request.url.path == "/v1/responses"
+            return httpx.Response(200, json={"output_text": "ok"})
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/v1/responses", json={"model": "gpt-4o", "input": "hello"})
+        assert resp.status_code == 200
+        assert resp.json()["output_text"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_responses_alias_and_max_output_tokens_default(self, client, app_with_models):
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=["gpt-4o-mini"], openai_base_url="https://api.openai.com",
+                           api_key="sk-test", max_tokens=4096),
+            ],
+            alias={"default": "gpt-4o-mini"},
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            body = json.loads(request.content)
+            assert body["model"] == "gpt-4o-mini"
+            assert body["max_output_tokens"] == 4096
+            return httpx.Response(200, json={"output_text": "ok"})
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/responses", json={"model": "default", "input": "hello"})
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_responses_streaming(self, client):
+        async def backend_handler(request):
+            body = json.loads(request.content)
+            assert body["stream"] is True
+            return httpx.Response(200, content=(
+                'data: {"type":"response.output_text.delta","delta":"he"}\n\n'
+                'data: {"type":"response.output_text.delta","delta":"llo"}\n\n'
+                'data: {"type":"response.completed","response":{"usage":{"input_tokens":4,"output_tokens":2}}}\n\n'
+            ))
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/responses", json={"model": "gpt-4o", "input": "hi", "stream": True})
+        assert resp.status_code == 200
+        assert "response.output_text.delta" in resp.text
+
+    @pytest.mark.asyncio
     async def test_list_models(self, client):
         resp = await client.get("/models")
         assert resp.status_code == 200

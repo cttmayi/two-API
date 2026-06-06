@@ -107,6 +107,17 @@ curl http://0.0.0.0:8080/chat/completions \
   }'
 ```
 
+**Responses API:**
+
+```bash
+curl http://0.0.0.0:8080/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o",
+    "input": "Hello, who are you?"
+  }'
+```
+
 **模型列表:**
 
 ```bash
@@ -175,8 +186,9 @@ curl http://0.0.0.0:8080/messages \
 | 端点 | 方法 | 说明 |
 |---|---|---|
 | `/` | GET | 主页，展示配置、使用统计和最近请求 |
-| `/chat/completions` | POST | OpenAI 兼容对话接口 |
-| `/models` | GET | 列出可用 OpenAI 兼容模型 |
+| `/chat/completions` | POST | OpenAI 兼容 Chat Completions 接口 |
+| `/responses`、`/v1/responses` | POST | OpenAI 兼容 Responses API |
+| `/models`、`/v1/models` | GET | 列出可用 OpenAI 兼容模型 |
 | `/embeddings` | POST | OpenAI 兼容向量接口 |
 | `/messages`、`/v1/messages` | POST | Anthropic 兼容对话接口 |
 | `/recent/download` | GET | 下载最近请求记录（支持 `?i=N` 下载单条） |
