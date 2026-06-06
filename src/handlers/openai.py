@@ -10,6 +10,9 @@ from src.forwarder import (
 )
 from src.logging_setup import get_logger
 from src.stats import get_stats
+from src.transforms.ir import StreamEventIR
+from src.transforms.openai_chat import chat_request_from_ir, chat_response_to_ir, chat_stream_event_to_ir, messages_to_dicts
+from src.transforms.openai_responses import responses_request_to_ir, responses_response_from_ir, responses_stream_event_from_ir
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -128,6 +131,12 @@ def _chat_stream_stats(sse_lines: list[str], status_code: int):
     return prompt_tokens, completion_tokens, cache_read_tokens, output_content
 
 
+def _unsupported_responses_to_chat_field(body: dict) -> str | None:
+    if "previous_response_id" in body:
+        return "previous_response_id"
+    return None
+
+
 def _responses_stream_stats(sse_lines: list[str], status_code: int):
     input_tokens = None
     output_tokens = None
@@ -199,6 +208,33 @@ def _record_openai_request(
     )
 
 
+def _sse_event(event: str, data: dict) -> bytes:
+    payload = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
+    return f"event: {event}\ndata: {payload}\n\n".encode("utf-8")
+
+
+def _responses_function_call_item(tool_call: dict) -> dict:
+    function = tool_call.get("function", {})
+    return {
+        "id": tool_call.get("id"),
+        "type": "function_call",
+        "call_id": tool_call.get("id"),
+        "name": function.get("name"),
+        "arguments": function.get("arguments", ""),
+        "status": "completed",
+    }
+
+
+def _responses_message_item(message_id: str, status: str, output_text: str = "") -> dict:
+    return {
+        "id": message_id,
+        "type": "message",
+        "status": status,
+        "role": "assistant",
+        "content": [{"type": "output_text", "text": output_text, "annotations": []}] if output_text else [],
+    }
+
+
 def _streaming_proxy_response(
     request: Request,
     *,
@@ -248,6 +284,131 @@ def _streaming_proxy_response(
         )
 
     return StreamingResponse(stream_with_stats(), media_type="text/event-stream")
+
+
+def _responses_to_chat_streaming_response(
+    request: Request,
+    *,
+    chat_body: dict,
+    entry,
+    model_name: str,
+    start: float,
+):
+    async def stream_converted():
+        chat_body_bytes = _dump_body(chat_body)
+        chat_request = Request(request.scope, request.receive)
+        chat_request.scope["path"] = "/chat/completions"
+        chat_request.scope["raw_path"] = b"/chat/completions"
+        url = _build_backend_url(entry.openai_base_url, chat_request.url.path, chat_request.url.query)
+        req_headers = _prepare_headers(dict(request.headers), entry.api_key)
+        client = get_forward_client()
+        status_code = 200
+        sse_lines: list[str] = []
+        partial = ""
+        output_text = ""
+        tool_calls_by_idx: dict[int, dict] = {}
+        emitted_tool_call_idxs: set[int] = set()
+        response_id = "resp_chatcmpl"
+        message_id = "msg_resp_chatcmpl"
+        text_output_started = False
+        created_event = responses_stream_event_from_ir(StreamEventIR(type="response_created", response={"id": response_id, "object": "response", "status": "in_progress", "model": model_name}))
+        if created_event:
+            yield _sse_event(*created_event)
+        async with client.stream(method=request.method, url=url, headers=req_headers, content=chat_body_bytes) as resp:
+            status_code = resp.status_code
+            async for chunk in resp.aiter_bytes():
+                partial += chunk.decode("utf-8", errors="replace")
+                while "\n" in partial:
+                    line, partial = partial.split("\n", 1)
+                    line = line.rstrip("\r")
+                    if not line:
+                        continue
+                    sse_lines.append(line)
+                    if not line.startswith("data:"):
+                        continue
+                    data_str = line[5:].strip()
+                    if data_str == "[DONE]":
+                        continue
+                    try:
+                        data = json.loads(data_str)
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        continue
+                    if data.get("id"):
+                        response_id = data["id"].replace("chatcmpl", "resp", 1) if data["id"].startswith("chatcmpl") else data["id"]
+                        message_id = f"msg_{response_id}"
+                    choices = data.get("choices") or []
+                    finish_reason = choices[0].get("finish_reason") if choices else None
+                    delta = choices[0].get("delta") if choices else {}
+                    for tool_call in (delta or {}).get("tool_calls", []):
+                        idx = tool_call.get("index", 0)
+                        if idx not in tool_calls_by_idx:
+                            tool_calls_by_idx[idx] = {
+                                "id": tool_call.get("id") or f"call_{idx}",
+                                "type": "function",
+                                "function": {"name": "", "arguments": ""},
+                            }
+                        existing = tool_calls_by_idx[idx]
+                        if tool_call.get("id"):
+                            existing["id"] = tool_call["id"]
+                        function = tool_call.get("function", {})
+                        if function.get("name"):
+                            existing["function"]["name"] += function["name"]
+                        if function.get("arguments"):
+                            existing["function"]["arguments"] += function["arguments"]
+                    if finish_reason == "tool_calls":
+                        for idx in sorted(tool_calls_by_idx):
+                            if idx in emitted_tool_call_idxs:
+                                continue
+                            emitted_tool_call_idxs.add(idx)
+                            yield _sse_event("response.output_item.done", {"type": "response.output_item.done", "item": _responses_function_call_item(tool_calls_by_idx[idx])})
+                    event_ir = chat_stream_event_to_ir(data)
+                    event = responses_stream_event_from_ir(event_ir) if event_ir else None
+                    if event and event_ir and event_ir.delta:
+                        if not text_output_started:
+                            text_output_started = True
+                            yield _sse_event("response.output_item.added", {"type": "response.output_item.added", "output_index": 0, "item": _responses_message_item(message_id, "in_progress")})
+                            yield _sse_event("response.content_part.added", {"type": "response.content_part.added", "item_id": message_id, "output_index": 0, "content_index": 0, "part": {"type": "output_text", "text": "", "annotations": []}})
+                        output_text += event_ir.delta
+                        yield _sse_event(*event)
+        prompt_tokens, completion_tokens, cache_read_tokens, output_content = _chat_stream_stats(sse_lines, status_code)
+        if status_code != 200 and not output_content:
+            output_content = {
+                "backend_status": status_code,
+                "backend_error": "empty response body",
+                "converted_request": chat_body,
+            }
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        _record_openai_request(
+            model_name=model_name,
+            backend_url=entry.openai_base_url,
+            method=request.method,
+            path=request.url.path,
+            latency_ms=latency_ms,
+            status_code=status_code,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            cache_read_tokens=cache_read_tokens,
+            streaming=True,
+            input_messages=chat_body.get("messages", []),
+            output_content=output_content,
+        )
+        usage = {
+            "input_tokens": prompt_tokens or 0,
+            "output_tokens": completion_tokens or 0,
+        }
+        usage["total_tokens"] = usage["input_tokens"] + usage["output_tokens"]
+        output = []
+        if text_output_started:
+            yield _sse_event("response.output_text.done", {"type": "response.output_text.done", "item_id": message_id, "output_index": 0, "content_index": 0, "text": output_text})
+            yield _sse_event("response.content_part.done", {"type": "response.content_part.done", "item_id": message_id, "output_index": 0, "content_index": 0, "part": {"type": "output_text", "text": output_text, "annotations": []}})
+            message_item = _responses_message_item(message_id, "completed", output_text)
+            output.append(message_item)
+            yield _sse_event("response.output_item.done", {"type": "response.output_item.done", "output_index": 0, "item": message_item})
+        completed_event = responses_stream_event_from_ir(StreamEventIR(type="response_completed", response={"id": response_id, "object": "response", "status": "completed", "model": model_name, "output": output, "output_text": output_text, "usage": usage}))
+        if completed_event:
+            yield _sse_event(*completed_event)
+
+    return StreamingResponse(stream_converted(), media_type="text/event-stream")
 
 
 @router.post("/chat/completions")
@@ -322,6 +483,71 @@ async def responses(request: Request):
     start = time.perf_counter()
 
     try:
+        if entry.responses_to_chat:
+            unsupported_field = _unsupported_responses_to_chat_field(body_json)
+            if unsupported_field:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": f"Field {unsupported_field} is not supported when responses_to_chat is enabled"},
+                )
+            request_ir = responses_request_to_ir(body_json)
+            chat_body = chat_request_from_ir(request_ir)
+            if body_json.get("stream", False):
+                return _responses_to_chat_streaming_response(
+                    request,
+                    chat_body=chat_body,
+                    entry=entry,
+                    model_name=model_name,
+                    start=start,
+                )
+            chat_body_bytes = _dump_body(chat_body)
+            chat_request = Request(request.scope, request.receive)
+            chat_request.scope["path"] = "/chat/completions"
+            chat_request.scope["raw_path"] = b"/chat/completions"
+            resp = await forward_non_stream(chat_request, entry.openai_base_url, entry.api_key, body=chat_body_bytes)
+            latency_ms = int((time.perf_counter() - start) * 1000)
+
+            input_tokens = None
+            output_tokens = None
+            cache_read_tokens = None
+            output_content = None
+            if resp.status_code == 200:
+                try:
+                    chat_resp_body = json.loads(resp.body)
+                    converted_body = responses_response_from_ir(chat_response_to_ir(chat_resp_body, model=model_name))
+                    usage = converted_body.get("usage", {})
+                    input_tokens = usage.get("input_tokens")
+                    output_tokens = usage.get("output_tokens")
+                    cache_read_tokens = usage.get("input_tokens_details", {}).get("cached_tokens")
+                    output_content = converted_body.get("output_text")
+                    resp = JSONResponse(status_code=200, content=converted_body)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    output_content = resp.body.decode("utf-8", errors="replace")
+                    resp = JSONResponse(status_code=502, content={"error": "Unable to convert chat response"})
+            else:
+                error_body = resp.body.decode("utf-8", errors="replace")
+                output_content = error_body or {
+                    "backend_status": resp.status_code,
+                    "backend_error": "empty response body",
+                    "converted_request": chat_body,
+                }
+
+            _record_openai_request(
+                model_name=model_name,
+                backend_url=entry.openai_base_url,
+                method=request.method,
+                path=request.url.path,
+                latency_ms=latency_ms,
+                status_code=resp.status_code,
+                prompt_tokens=input_tokens,
+                completion_tokens=output_tokens,
+                cache_read_tokens=cache_read_tokens,
+                streaming=False,
+                input_messages=chat_body.get("messages", []),
+                output_content=output_content,
+            )
+            return resp
+
         if body_json.get("stream", False):
             return _streaming_proxy_response(
                 request,
@@ -330,7 +556,7 @@ async def responses(request: Request):
                 entry=entry,
                 model_name=model_name,
                 start=start,
-                input_messages=lambda body: [{"role": "user", "content": body.get("input", "")}],
+                input_messages=lambda body: messages_to_dicts(responses_request_to_ir(body).messages),
                 parse_stats=_responses_stream_stats,
             )
 

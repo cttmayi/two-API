@@ -208,7 +208,7 @@ async def homepage(request: Request):
                         except (json.JSONDecodeError, UnicodeDecodeError):
                             pass
                     parts.append("[tool: " + fn_name + "]" + inp)
-            output_preview = " ".join(parts)
+            output_preview = " ".join(parts) or _tool_input_summary(output).strip("()")
         output_preview = _html.escape(output_preview[:120])
 
         input_json = _html.escape(json.dumps(r.get("input_messages", []), ensure_ascii=False, indent=2))

@@ -17,6 +17,8 @@ pip install -e ".[dev]"
 
 ## Configuration
 
+See [Configuration Guide](config.md) for detailed field descriptions.
+
 Copy `config.yaml.example` to `~/.two-api/config.yaml` (first time: `mkdir -p ~/.two-api`), then edit the model and backend info:
 
 ```yaml
@@ -57,6 +59,8 @@ logging:
   - Alias mapping `fast: gpt-4o-mini`: the client requests `"fast"` and the proxy forwards as `"gpt-4o-mini"`
 - `openai_base_url` / `anthropic_base_url`: At least one must be configured. The proxy appends the request path to this URL.
 - `api_key`: Optional. When set, it is injected as `Authorization: Bearer <key>` into backend requests.
+- `max_tokens`: Optional. When the client omits `max_tokens` / `max_output_tokens`, the proxy injects this default value.
+- `responses_to_chat`: Optional. Set to `true` to convert client Responses API requests to backend Chat Completions requests, then convert Chat output back to Responses format; `developer` roles, `input_text` content blocks, and function `tools` are converted to Chat-compatible formats, blank messages are filtered, and Chat tool calls are converted back to Responses function calls.
 
 ## Running
 

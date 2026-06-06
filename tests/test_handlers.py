@@ -6,6 +6,7 @@ from src.config import ModelEntry
 from src.router import ModelRouter
 from src.forwarder import set_forward_client, reset_forward_client
 from src.config import Config
+from src.stats import get_stats
 
 
 @pytest.fixture(autouse=True)
@@ -266,6 +267,365 @@ class TestOpenAIEndpoints:
 
         resp = await client.post("/responses", json={"model": "default", "input": "hello"})
         assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_responses_to_chat_non_stream(self, client, app_with_models):
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(
+                    names=["resp-chat"],
+                    openai_base_url="https://api.openai.com",
+                    api_key="sk-test",
+                    responses_to_chat=True,
+                ),
+            ],
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            assert request.url.path == "/chat/completions"
+            body = json.loads(request.content)
+            assert body["model"] == "resp-chat"
+            assert body["messages"] == [
+                {"role": "system", "content": "You are helpful."},
+                {"role": "user", "content": "hello"},
+            ]
+            assert body["max_tokens"] == 12
+            assert body["temperature"] == 0.7
+            assert "input" not in body
+            assert "max_output_tokens" not in body
+            return httpx.Response(200, json={
+                "id": "chatcmpl_123",
+                "created": 1234567890,
+                "model": "resp-chat",
+                "choices": [{
+                    "message": {"role": "assistant", "content": "hi there"},
+                    "finish_reason": "stop",
+                }],
+                "usage": {
+                    "prompt_tokens": 7,
+                    "completion_tokens": 3,
+                    "total_tokens": 10,
+                    "prompt_tokens_details": {"cached_tokens": 2},
+                },
+            })
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/responses", json={
+            "model": "resp-chat",
+            "instructions": "You are helpful.",
+            "input": "hello",
+            "max_output_tokens": 12,
+            "temperature": 0.7,
+        })
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["object"] == "response"
+        assert data["status"] == "completed"
+        assert data["output_text"] == "hi there"
+        assert data["output"][0]["content"][0]["text"] == "hi there"
+        assert data["usage"] == {
+            "input_tokens": 7,
+            "output_tokens": 3,
+            "total_tokens": 10,
+            "input_tokens_details": {"cached_tokens": 2},
+        }
+
+    @pytest.mark.asyncio
+    async def test_responses_to_chat_converts_chat_tool_calls_to_responses_output(self, client, app_with_models):
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=["resp-chat"], openai_base_url="https://api.openai.com", responses_to_chat=True),
+            ],
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            return httpx.Response(200, json={
+                "id": "chatcmpl_123",
+                "created": 1234567890,
+                "model": "resp-chat",
+                "choices": [{"message": {
+                    "role": "assistant",
+                    "content": "I will run it.",
+                    "tool_calls": [{
+                        "id": "call_123",
+                        "type": "function",
+                        "function": {"name": "exec_command", "arguments": "{\"cmd\":\"pwd\"}"},
+                    }],
+                }}],
+            })
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/responses", json={"model": "resp-chat", "input": "hello"})
+
+        assert resp.status_code == 200
+        assert resp.json()["output"][1] == {
+            "id": "call_123",
+            "type": "function_call",
+            "call_id": "call_123",
+            "name": "exec_command",
+            "arguments": "{\"cmd\":\"pwd\"}",
+            "status": "completed",
+        }
+
+    @pytest.mark.asyncio
+    async def test_responses_to_chat_forwards_function_tools(self, client, app_with_models):
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=["resp-chat"], openai_base_url="https://api.openai.com", responses_to_chat=True),
+            ],
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            body = json.loads(request.content)
+            assert body["tools"] == [{
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "description": "Get weather by city.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}},
+                        "required": ["city"],
+                    },
+                },
+            }]
+            return httpx.Response(200, json={
+                "id": "chatcmpl_123",
+                "created": 1234567890,
+                "model": "resp-chat",
+                "choices": [{"message": {"role": "assistant", "content": "hi"}}],
+            })
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/responses", json={
+            "model": "resp-chat",
+            "input": "hello",
+            "tools": [{
+                "type": "function",
+                "name": "get_weather",
+                "description": "Get weather by city.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"city": {"type": "string"}},
+                    "required": ["city"],
+                },
+            }],
+        })
+
+        assert resp.status_code == 200
+        assert resp.json()["output_text"] == "hi"
+
+    @pytest.mark.asyncio
+    async def test_responses_to_chat_normalizes_codex_messages_and_tools(self, client, app_with_models):
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=["resp-chat"], openai_base_url="https://api.openai.com", responses_to_chat=True),
+            ],
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            body = json.loads(request.content)
+            assert body["messages"] == [
+                {"role": "system", "content": "rules"},
+                {"role": "user", "content": "hello"},
+            ]
+            assert body["tools"] == [{
+                "type": "function",
+                "function": {
+                    "name": "exec_command",
+                    "parameters": {"type": "object", "properties": {"cmd": {"type": "string"}}, "required": ["cmd"]},
+                },
+            }]
+            return httpx.Response(200, json={
+                "id": "chatcmpl_123",
+                "created": 1234567890,
+                "model": "resp-chat",
+                "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+            })
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/responses", json={
+            "model": "resp-chat",
+            "input": [
+                {"role": "developer", "content": [{"type": "input_text", "text": "rules"}]},
+                {"role": "user", "content": [{"type": "input_text", "text": "hello"}]},
+            ],
+            "tools": [
+                {"type": "function", "name": "exec_command", "parameters": {"type": "object", "properties": {"cmd": {"type": "string"}}, "required": ["cmd"]}},
+                {"type": "namespace", "name": "multi_agent_v1", "tools": []},
+                {"type": "web_search"},
+            ],
+        })
+
+        assert resp.status_code == 200
+        assert resp.json()["output_text"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_responses_to_chat_records_empty_backend_error_detail(self, client, app_with_models):
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=["resp-chat"], openai_base_url="https://api.openai.com", responses_to_chat=True),
+            ],
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            return httpx.Response(400, content=b"")
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/responses", json={"model": "resp-chat", "input": "hello"})
+
+        assert resp.status_code == 400
+        recent = get_stats().snapshot()["recent"][0]
+        assert recent["output"]["backend_status"] == 400
+        assert recent["output"]["converted_request"]["messages"] == [{"role": "user", "content": "hello"}]
+
+    @pytest.mark.asyncio
+    async def test_responses_to_chat_streaming_records_empty_backend_error_detail(self, client, app_with_models):
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=["resp-chat"], openai_base_url="https://api.openai.com", responses_to_chat=True),
+            ],
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            return httpx.Response(400, content=b"")
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/responses", json={"model": "resp-chat", "input": "hello", "stream": True})
+
+        assert resp.status_code == 200
+        recent = get_stats().snapshot()["recent"][0]
+        assert recent["status"] == 400
+        assert recent["output"]["backend_status"] == 400
+        assert recent["output"]["converted_request"]["stream"] is True
+        assert recent["output"]["converted_request"]["messages"] == [{"role": "user", "content": "hello"}]
+
+    @pytest.mark.asyncio
+    async def test_responses_to_chat_streaming(self, client, app_with_models):
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=["resp-chat"], openai_base_url="https://api.openai.com", responses_to_chat=True),
+            ],
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            assert request.url.path == "/chat/completions"
+            body = json.loads(request.content)
+            assert body["stream"] is True
+            assert body["messages"] == [{"role": "user", "content": "hello"}]
+            return httpx.Response(200, content=(
+                'data: {"choices":[{"delta":{"content":"he"}}]}\n\n'
+                'data: {"choices":[{"delta":{"content":"llo"}}]}\n\n'
+                'data: {"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}\n\n'
+                'data: [DONE]\n\n'
+            ))
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/responses", json={"model": "resp-chat", "input": "hello", "stream": True})
+
+        assert resp.status_code == 200
+        assert "response.output_item.added" in resp.text
+        assert "response.content_part.added" in resp.text
+        assert "response.output_text.delta" in resp.text
+        assert '"delta":"he"' in resp.text
+        assert '"delta":"llo"' in resp.text
+        assert "response.output_text.done" in resp.text
+        assert "response.content_part.done" in resp.text
+        assert "response.output_item.done" in resp.text
+        assert "response.completed" in resp.text
+
+    @pytest.mark.asyncio
+    async def test_responses_to_chat_streaming_converts_tool_calls(self, client, app_with_models):
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=["resp-chat"], openai_base_url="https://api.openai.com", responses_to_chat=True),
+            ],
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            return httpx.Response(200, content=(
+                'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_123","type":"function","function":{"name":"exec_command","arguments":"{\\\"cmd\\\":\\\"pwd"}}]}}]}\n\n'
+                'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\\"}"}}]}}]}\n\n'
+                'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n'
+                'data: [DONE]\n\n'
+            ))
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/responses", json={"model": "resp-chat", "input": "hello", "stream": True})
+
+        assert resp.status_code == 200
+        assert "response.output_item.done" in resp.text
+        assert '"type":"function_call"' in resp.text
+        assert '"call_id":"call_123"' in resp.text
+        assert '"name":"exec_command"' in resp.text
+        assert '"arguments":"{\\"cmd\\":\\"pwd\\"}"' in resp.text
+
+    @pytest.mark.asyncio
+    async def test_responses_to_chat_streaming_uses_zero_usage_when_missing(self, client, app_with_models):
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=["resp-chat"], openai_base_url="https://api.openai.com", responses_to_chat=True),
+            ],
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            return httpx.Response(200, content=(
+                'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n'
+                'data: [DONE]\n\n'
+            ))
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/responses", json={"model": "resp-chat", "input": "hello", "stream": True})
+
+        assert resp.status_code == 200
+        assert '"usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0}' in resp.text
+        assert "null" not in resp.text
+
+    @pytest.mark.asyncio
+    async def test_responses_to_chat_rejects_previous_response_id(self, client, app_with_models):
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=["resp-chat"], openai_base_url="https://api.openai.com", responses_to_chat=True),
+            ],
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        resp = await client.post("/responses", json={
+            "model": "resp-chat",
+            "input": "hello",
+            "previous_response_id": "resp_123",
+        })
+
+        assert resp.status_code == 400
+        assert "previous_response_id" in resp.json()["error"]
 
     @pytest.mark.asyncio
     async def test_responses_streaming(self, client):

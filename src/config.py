@@ -20,6 +20,7 @@ class ModelEntry(BaseModel):
     anthropic_base_url: str | None = None
     api_key: str | None = None
     max_tokens: int | None = None
+    responses_to_chat: bool = False
 
     @model_validator(mode="after")
     def check_at_least_one_base_url(self):

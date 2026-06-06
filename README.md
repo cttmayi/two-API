@@ -61,6 +61,7 @@ logging:
 - `openai_base_url` / `anthropic_base_url`: 至少配置一个，代理将请求路径拼接到此 URL
 - `api_key`: 可选，配置后将作为 `Authorization: Bearer <key>` 注入到后端请求
 - `max_tokens`: 可选，客户端请求未传 `max_tokens` 时代理自动注入此值。不配置则不注入，不影响远端有传的情况
+- `responses_to_chat`: 可选，设为 `true` 后客户端调用 Responses API 时会转成后端 Chat Completions 请求，再把 Chat 输出转换回 Responses 格式；会将 `developer` role、`input_text` 内容块和 function `tools` 转为 Chat 兼容格式，过滤空白消息，并把 Chat tool calls 转回 Responses function calls
 
 ## 运行
 

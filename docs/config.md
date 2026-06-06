@@ -27,6 +27,7 @@ models:
     openai_base_url: https://api.openai.com/v1
     api_key: sk-your-openai-key
     max_tokens: 4096
+    responses_to_chat: false
 
   - names:
       - claude-sonnet-4-6
@@ -78,6 +79,7 @@ server:
 | `anthropic_base_url` | 条件必填 | `null` | Anthropic 兼容后端地址 |
 | `api_key` | 否 | `null` | 后端 API Key，配置后注入为 `Authorization: Bearer <key>` |
 | `max_tokens` | 否 | `null` | 客户端未传 `max_tokens` / `max_output_tokens` 时自动注入的默认值 |
+| `responses_to_chat` | 否 | `false` | 客户端调用 Responses API 时，是否转成 Chat Completions 请求发给后端 |
 
 `openai_base_url` 和 `anthropic_base_url` 至少需要配置一个。只配置 `openai_base_url` 的模型只能用于 OpenAI 兼容端点；只配置 `anthropic_base_url` 的模型只能用于 Anthropic 兼容端点；两者都配置时，同一个模型名可用于两类端点。
 
@@ -171,6 +173,34 @@ models:
     api_key: sk-ant-your-anthropic-key
     max_tokens: 8192
 ```
+
+### `responses_to_chat`
+
+`responses_to_chat` 用于兼容只支持 Chat Completions、但客户端调用 Responses API 的后端。
+
+```yaml
+models:
+  - names:
+      - ark-deepseek-v4-flash
+    openai_base_url: https://ark.cn-beijing.volces.com/api/v3
+    api_key: ark-your-key
+    responses_to_chat: true
+```
+
+启用后：
+
+- 客户端请求 `/responses` 或 `/v1/responses`
+- 代理把请求转换为后端 `/chat/completions`
+- `input` 转换为 `messages`
+- `developer` role 会转换为 Chat 兼容的 `system` role
+- `input_text` 内容块会展开为纯文本 content，空白消息会过滤
+- `instructions` 转换为第一条 `system` message
+- `max_output_tokens` 转换为 `max_tokens`
+- `temperature`、`top_p`、`stream` 会透传
+- function `tools` 会转换为 Chat Completions 的 function tools 格式，非 function tools 会过滤
+- 后端 Chat Completions 输出会转换回 Responses API 格式返回给客户端，包括 function tool calls
+
+暂不支持 `previous_response_id`，请求中包含该字段时会返回 `400`。
 
 ## `alias`
 

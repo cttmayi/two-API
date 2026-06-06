@@ -7,6 +7,14 @@ from src.router import ModelRouter
 from src.stats import get_stats
 
 
+@pytest.fixture(autouse=True)
+def reset_stats():
+    from src import stats
+    stats._stats = None
+    yield
+    stats._stats = None
+
+
 def test_usage_file_is_next_to_logs_directory(tmp_path):
     config = Config(
         models=[ModelEntry(names=["gpt-4o"], openai_base_url="https://api.openai.com")],
@@ -67,3 +75,32 @@ async def test_homepage_renders_model_colored_hourly_chart_segments():
     assert "Per Output Token" in resp.text
     assert "function fmtDuration" in resp.text
     assert "white-space: nowrap" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_homepage_renders_structured_error_output_preview():
+    app.state.config = Config(
+        models=[ModelEntry(names=["gpt-4o"], openai_base_url="https://api.openai.com")],
+    )
+    app.state.router = ModelRouter(app.state.config.models)
+    get_stats().record_detail(
+        model="gpt-4o",
+        provider="openai",
+        streaming=False,
+        latency_ms=123,
+        status=400,
+        prompt_tokens=None,
+        completion_tokens=None,
+        cache_read=None,
+        cache_write=None,
+        input_messages=[{"role": "user", "content": "hello"}],
+        output_content={"backend_status": 400, "backend_error": "empty response body"},
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/")
+
+    assert resp.status_code == 200
+    assert "backend_status=400" in resp.text
+    assert "backend_error=empty response body" in resp.text
