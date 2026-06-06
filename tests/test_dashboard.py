@@ -321,6 +321,35 @@ async def test_recent_requests_renders_and_downloads_alias_field():
 
 
 @pytest.mark.asyncio
+async def test_recent_requests_renders_output_text_value_without_key():
+    app.state.config = Config(
+        models=[ModelEntry(names=["gpt-4o"], openai_base_url="https://api.openai.com")],
+    )
+    app.state.router = ModelRouter(app.state.config.models)
+    get_stats().record_detail(
+        model="gpt-4o",
+        provider="openai",
+        streaming=False,
+        latency_ms=123,
+        status=200,
+        prompt_tokens=1,
+        completion_tokens=2,
+        cache_read=None,
+        cache_write=None,
+        input_messages=[{"role": "user", "content": "hello"}],
+        output_content={"output_text": "plain answer"},
+    )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        page = await client.get("/")
+
+    assert page.status_code == 200
+    assert "plain answer" in page.text
+    assert "output_text=plain answer" not in page.text
+
+
+@pytest.mark.asyncio
 async def test_homepage_renders_structured_error_output_preview():
     app.state.config = Config(
         models=[ModelEntry(names=["gpt-4o"], openai_base_url="https://api.openai.com")],

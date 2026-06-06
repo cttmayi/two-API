@@ -195,6 +195,8 @@ async def homepage(request: Request):
             parts = []
             if output.get("content"):
                 parts.append(str(output["content"]))
+            if output.get("output_text"):
+                parts.append(str(output["output_text"]))
             for tc in output.get("tool_calls", []):
                 if isinstance(tc, dict):
                     fn = tc.get("function", {})
