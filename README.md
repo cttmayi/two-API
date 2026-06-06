@@ -19,6 +19,8 @@ pip install -e ".[dev]"
 
 ## 配置
 
+详细字段说明见：[配置文件说明](docs/config.md)。
+
 复制 `config.yaml.example` 为 `~/.two-api/config.yaml`（首次使用需 `mkdir -p ~/.two-api`），编辑模型和后端信息：
 
 ```yaml
@@ -174,18 +176,18 @@ curl http://0.0.0.0:8080/messages \
 
 - **概览卡片**：运行时间、总请求数、模型组数
 - **模型配置表**：名称、后端、API Key 状态
-- **使用统计**（可折叠）：每模型请求数、输入/输出 token、缓存命中/写入、平均延迟、每输出 token 平均延迟
+- **Hourly Token Usage**：最近 24 个小时的 token 柱状图，按模型用不同颜色堆叠显示；悬停可查看请求数、总 token、平均延迟、每输出 token 延迟以及各模型明细
 - **最近请求**（最近 50 条）：时间、模型、提供商、流式标记、状态码、延迟、输入/输出 token、缓存读写、输入/输出预览
   - 点击行展开详情，查看完整请求/响应内容和 token 用量
   - 每行单独下载按钮，保存该次请求为 JSON 文件
 
-流式和非流式请求均记录统计。OpenAI 端点的缓存命中从 `usage.prompt_tokens_details.cached_tokens` 提取，Anthropic 端点的缓存命中/写入从 `usage.cache_read_input_tokens` / `usage.cache_creation_input_tokens` 提取。
+流式和非流式请求均记录统计。OpenAI 端点的缓存命中从 `usage.prompt_tokens_details.cached_tokens` 提取，Anthropic 端点的缓存命中/写入从 `usage.cache_read_input_tokens` / `usage.cache_creation_input_tokens` 提取。小时用量会持久化到 `~/.two-api/usage.json`，重启后继续加载；Web 页面最多展示最近 24 个小时。
 
 ## 端点一览
 
 | 端点 | 方法 | 说明 |
 |---|---|---|
-| `/` | GET | 主页，展示配置、使用统计和最近请求 |
+| `/` | GET | 主页，展示配置、小时用量图和最近请求 |
 | `/chat/completions` | POST | OpenAI 兼容 Chat Completions 接口 |
 | `/responses`、`/v1/responses` | POST | OpenAI 兼容 Responses API |
 | `/models`、`/v1/models` | GET | 列出可用 OpenAI 兼容模型 |
@@ -215,7 +217,7 @@ two-API/
 │   ├── config.py            # YAML 配置 + Pydantic 校验
 │   ├── router.py            # 模型名 → 后端匹配
 │   ├── forwarder.py         # httpx 转发 + 流式
-│   ├── stats.py             # 线程安全统计 + 最近请求记录
+│   ├── stats.py             # 线程安全统计 + 小时用量持久化 + 最近请求记录
 │   ├── logging_setup.py     # structlog 配置
 │   └── handlers/
 │       ├── __init__.py
@@ -225,6 +227,8 @@ two-API/
     ├── test_config.py
     ├── test_router.py
     ├── test_forwarder.py
-    └── test_handlers.py
+    ├── test_handlers.py
+    ├── test_dashboard.py
+    └── test_stats.py
 ```
 

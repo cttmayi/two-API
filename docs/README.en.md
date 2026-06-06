@@ -172,18 +172,18 @@ Visit `/` to see an HTML page showing:
 
 - **Overview cards**: Uptime, total requests, model group count
 - **Model configuration table**: Name, backend, API key status
-- **Usage statistics** (collapsible): Requests per model, input/output tokens, cache read/write, average latency, average latency per output token
+- **Hourly Token Usage**: Token usage chart for the latest 24 hours, stacked by model with distinct colors; hover to view requests, total tokens, average latency, latency per output token, and per-model details
 - **Recent requests** (last 50): Time, model, provider, streaming flag, status code, latency, input/output tokens, cache read/write, input/output preview
   - Click a row to expand and view full request/response content and token usage
   - Individual download button per row to save that request as a JSON file
 
-Statistics are recorded for both streaming and non-streaming requests. Cache hits for OpenAI endpoints are extracted from `usage.prompt_tokens_details.cached_tokens`; Anthropic cache reads/writes are extracted from `usage.cache_read_input_tokens` / `usage.cache_creation_input_tokens`.
+Statistics are recorded for both streaming and non-streaming requests. Cache hits for OpenAI endpoints are extracted from `usage.prompt_tokens_details.cached_tokens`; Anthropic cache reads/writes are extracted from `usage.cache_read_input_tokens` / `usage.cache_creation_input_tokens`. Hourly usage is persisted to `~/.two-api/usage.json` and reloaded after restart; the Web page shows at most the latest 24 hourly buckets.
 
 ## Endpoints
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/` | GET | Homepage with config, usage stats, and recent requests |
+| `/` | GET | Homepage with config, hourly usage chart, and recent requests |
 | `/chat/completions` | POST | OpenAI-compatible Chat Completions |
 | `/responses`, `/v1/responses` | POST | OpenAI-compatible Responses API |
 | `/models`, `/v1/models` | GET | List available OpenAI-compatible models |
@@ -213,7 +213,7 @@ two-API/
 │   ├── config.py            # YAML config + Pydantic validation
 │   ├── router.py            # Model name → backend matching
 │   ├── forwarder.py         # httpx forwarding + streaming
-│   ├── stats.py             # Thread-safe stats + recent request tracking
+│   ├── stats.py             # Thread-safe stats + hourly usage persistence + recent request tracking
 │   ├── logging_setup.py     # structlog configuration
 │   └── handlers/
 │       ├── __init__.py
@@ -223,5 +223,7 @@ two-API/
     ├── test_config.py
     ├── test_router.py
     ├── test_forwarder.py
-    └── test_handlers.py
+    ├── test_handlers.py
+    ├── test_dashboard.py
+    └── test_stats.py
 ```
