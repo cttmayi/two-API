@@ -116,6 +116,77 @@ class TestOpenAIEndpoints:
         assert data["choices"][0]["message"]["content"] == "ok"
 
     @pytest.mark.asyncio
+    async def test_chat_completions_records_backend_model_and_alias(self, client, app_with_models):
+        from src import stats as stats_module
+        stats_module._stats = None
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=[{"fast": "gpt-4o-mini"}], openai_base_url="https://api.openai.com", api_key="sk-test"),
+            ],
+            alias={"default": "fast"},
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            body = json.loads(request.content)
+            assert body["model"] == "gpt-4o-mini"
+            return httpx.Response(200, json={
+                "choices": [{"message": {"content": "ok"}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+            })
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/chat/completions", json={
+            "model": "default",
+            "messages": [{"role": "user", "content": "hi"}],
+        })
+
+        assert resp.status_code == 200
+        snapshot = get_stats().snapshot()
+        recent = snapshot["recent"][0]
+        assert recent["model"] == "gpt-4o-mini"
+        assert recent["alias"] == "default"
+        hourly = snapshot["hourly"][0]
+        assert hourly["models"]["gpt-4o-mini"]["requests"] == 1
+        assert hourly["aliases"]["default"]["model"] == "gpt-4o-mini"
+        assert hourly["aliases"]["default"]["requests"] == 1
+
+    @pytest.mark.asyncio
+    async def test_chat_completions_records_empty_alias_when_no_global_alias(self, client, app_with_models):
+        from src import stats as stats_module
+        stats_module._stats = None
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=[{"fast": "gpt-4o-mini"}], openai_base_url="https://api.openai.com", api_key="sk-test"),
+            ],
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            body = json.loads(request.content)
+            assert body["model"] == "gpt-4o-mini"
+            return httpx.Response(200, json={
+                "choices": [{"message": {"content": "ok"}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 2},
+            })
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/chat/completions", json={
+            "model": "fast",
+            "messages": [{"role": "user", "content": "hi"}],
+        })
+
+        assert resp.status_code == 200
+        snapshot = get_stats().snapshot()
+        assert snapshot["recent"][0]["model"] == "gpt-4o-mini"
+        assert snapshot["recent"][0]["alias"] == ""
+        assert snapshot["hourly"][0]["aliases"][""]["model"] == "gpt-4o-mini"
+
+    @pytest.mark.asyncio
     async def test_chat_completions_max_tokens_default(self, client, app_with_models):
         """When client omits max_tokens and entry has max_tokens set, inject default."""
         app_with_models.state.config = Config(
@@ -679,6 +750,43 @@ class TestAnthropicEndpoints:
         assert resp.status_code == 200
         data = resp.json()
         assert data["content"][0]["text"] == "hello"
+
+    @pytest.mark.asyncio
+    async def test_messages_records_backend_model_and_alias(self, client, app_with_models):
+        from src import stats as stats_module
+        stats_module._stats = None
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=[{"sonnet": "claude-sonnet-4-6"}], anthropic_base_url="https://api.anthropic.com", api_key="sk-ant"),
+            ],
+            alias={"default": "sonnet"},
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            body = json.loads(request.content)
+            assert body["model"] == "claude-sonnet-4-6"
+            return httpx.Response(200, json={
+                "content": [{"type": "text", "text": "ok"}],
+                "usage": {"input_tokens": 8, "output_tokens": 4},
+            })
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/messages", json={
+            "model": "default",
+            "messages": [{"role": "user", "content": "hi"}],
+        })
+
+        assert resp.status_code == 200
+        snapshot = get_stats().snapshot()
+        recent = snapshot["recent"][0]
+        assert recent["model"] == "claude-sonnet-4-6"
+        assert recent["alias"] == "default"
+        hourly = snapshot["hourly"][0]
+        assert hourly["models"]["claude-sonnet-4-6"]["requests"] == 1
+        assert hourly["aliases"]["default"]["model"] == "claude-sonnet-4-6"
 
     @pytest.mark.asyncio
     async def test_messages_max_tokens_default(self, client, app_with_models):

@@ -252,7 +252,7 @@ logging:
 ~/.two-api/usage.json
 ```
 
-Web 首页的 `Hourly Token Usage` 会从该文件加载重启前的小时用量，并最多展示最近 24 个小时。
+Web 首页的 `Hourly Token Usage` 会从该文件加载重启前的小时用量，并最多展示最近 24 个小时；图表可按模型或全局 alias 分组，无请求的小时会保留为空柱。
 
 ## 常见配置
 

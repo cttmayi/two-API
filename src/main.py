@@ -216,6 +216,7 @@ async def homepage(request: Request):
         recent_rows += f"""
         <tr class="recent-row" onclick="toggleDetail('{detail_id}')">
             <td class="cell-time">{r.get("time", "")}</td>
+            <td>{r.get("alias", "")}</td>
             <td>{r.get("model", "")}</td>
             <td>{r.get("provider", "")}</td>
             <td>{stream_badge}</td>
@@ -230,7 +231,7 @@ async def homepage(request: Request):
             <td class="cell-save" onclick="event.stopPropagation()"><a href="/recent/download?i={i}" class="save-btn" title="Save">&#128190;</a></td>
         </tr>
         <tr class="detail-row" id="{detail_id}" style="display:none;">
-            <td colspan="13">
+            <td colspan="14">
                 <div class="detail-grid">
                     <div class="detail-block">
                         <div class="detail-label">Input Messages</div>
@@ -249,7 +250,7 @@ async def homepage(request: Request):
     total_requests = stats["total_requests"]
     model_count = len(config.models)
     if recent_rows:
-        recent_section = '<table class="recent-table"><thead><tr><th>Time</th><th>Model</th><th>Provider</th><th>S</th><th>Status</th><th>Latency</th><th>Prompt</th><th>Compl</th><th>CacheR</th><th>CacheW</th><th>Input</th><th>Output</th><th></th></tr></thead><tbody>' + recent_rows + '</tbody></table>'
+        recent_section = '<table class="recent-table"><thead><tr><th>Time</th><th>Alias</th><th>Model</th><th>Provider</th><th>S</th><th>Status</th><th class="cell-num">Latency</th><th class="cell-num">Prompt</th><th class="cell-num">Compl</th><th class="cell-num">CacheR</th><th class="cell-num">CacheW</th><th>Input</th><th>Output</th><th></th></tr></thead><tbody>' + recent_rows + '</tbody></table>'
     else:
         recent_section = '<div class="empty-state">No requests processed yet</div>'
     hourly_json = json.dumps(stats.get("hourly", []), ensure_ascii=False).replace("</", "<\\/")
@@ -438,7 +439,21 @@ header .subtitle {{ color: #999; font-size: 0.85rem; margin-top: 0.15rem; }}
     gap: 1rem;
     margin-bottom: 1rem;
 }}
-.hourly-title {{ font-size: 0.9rem; font-weight: 700; color: #1a1a2e; }}
+.hourly-controls {{
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: #777;
+    font-size: 0.75rem;
+}}
+.hourly-controls select {{
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    background: #fff;
+    color: #333;
+    padding: 4px 8px;
+    font-size: 0.75rem;
+}}
 .hourly-chart {{
     height: 220px;
     display: flex;
@@ -484,7 +499,7 @@ header .subtitle {{ color: #999; font-size: 0.85rem; margin-top: 0.15rem; }}
     display: none;
     z-index: 10;
     min-width: 220px;
-    max-width: 520px;
+    max-width: 840px;
     white-space: nowrap;
     background: rgba(26,26,46,0.96);
     color: #fff;
@@ -509,21 +524,10 @@ header .subtitle {{ color: #999; font-size: 0.85rem; margin-top: 0.15rem; }}
     color: #999;
     white-space: nowrap;
 }}
-.hourly-detail {{
-    margin-top: 1rem;
-    padding: 0.85rem 1rem;
-    border-radius: 8px;
-    background: #f8f9fb;
-    color: #555;
-    font-size: 0.8rem;
-}}
-.hourly-detail-grid {{
-    display: grid;
-    grid-template-columns: repeat(7, minmax(90px, 1fr));
-    gap: 0.75rem;
-}}
-.hourly-detail-label {{ font-size: 0.68rem; color: #999; text-transform: uppercase; letter-spacing: 0.3px; }}
-.hourly-detail-value {{ font-weight: 700; color: #1a1a2e; margin-top: 2px; }}
+.hourly-detail {{ margin-top: 1rem; }}
+.hourly-detail-table-wrap {{ box-shadow: none; }}
+.hourly-detail-name {{ font-weight: 700; color: #1a1a2e; word-break: break-word; }}
+.hourly-detail-empty {{ color: #999; padding: 0.85rem 1rem; background: #f8f9fb; border-radius: 8px; }}
 
 .empty-state {{
     text-align: center;
@@ -580,6 +584,7 @@ header .subtitle {{ color: #999; font-size: 0.85rem; margin-top: 0.15rem; }}
     color: #444;
     text-align: right;
 }}
+.recent-table th.cell-num {{ text-align: right; }}
 .cell-preview {{
     font-size: 0.78rem;
     color: #555;
@@ -685,9 +690,17 @@ footer {{
 </div>
 
 <div class="section">
+    <div class="section-title">Hourly Token Usage</div>
     <div class="hourly-panel">
         <div class="hourly-header">
-            <div class="hourly-title">Hourly Token Usage</div>
+            <div></div>
+            <div class="hourly-controls">
+                <label for="hourly-group-by">Group by</label>
+                <select id="hourly-group-by" onchange="setHourlyGroup(this.value)">
+                    <option value="models">Model</option>
+                    <option value="aliases">Alias</option>
+                </select>
+            </div>
         </div>
         <div id="hourly-chart" class="hourly-chart"></div>
         <div id="hourly-tooltip" class="hourly-tooltip"></div>
@@ -705,6 +718,12 @@ footer {{
 
 <script>
 var hourlyUsageData = {hourly_json};
+var hourlyGroupBy = "models";
+function setHourlyGroup(value) {{
+    hourlyGroupBy = value === "aliases" ? "aliases" : "models";
+    renderHourlyChart();
+    renderHourlyDetail();
+}}
 function fmtMetric(n) {{
     n = n || 0;
     if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
@@ -721,46 +740,53 @@ function fmtDuration(ms) {{
 function hourlyLabel(hour) {{
     return (hour || "").slice(11, 16) || hour;
 }}
-function colorForModel(model) {{
+function colorForGroup(name) {{
     var colors = ["#2563eb", "#16a34a", "#dc2626", "#9333ea", "#ea580c", "#0891b2", "#be123c", "#4f46e5", "#65a30d", "#c026d3"];
     var hash = 0;
-    for (var i = 0; i < model.length; i++) hash = ((hash << 5) - hash + model.charCodeAt(i)) | 0;
+    for (var i = 0; i < name.length; i++) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
     return colors[Math.abs(hash) % colors.length];
 }}
-function modelNames() {{
+function hourlyGroups(item) {{
+    return item[hourlyGroupBy] || {{}};
+}}
+function groupLabel(name) {{
+    return hourlyGroupBy === "aliases" && name === "" ? "(no alias)" : name;
+}}
+function groupNames() {{
     var names = {{}};
     hourlyUsageData.forEach(function(item) {{
-        Object.keys(item.models || {{}}).forEach(function(name) {{ names[name] = true; }});
+        Object.keys(hourlyGroups(item)).forEach(function(name) {{ names[name] = true; }});
     }});
     return Object.keys(names).sort();
 }}
 function metricValue(item, metric) {{
     return item[metric] || 0;
 }}
-function modelMetricValue(item, model, metric) {{
-    var modelData = (item.models || {{}})[model] || {{}};
-    return modelData[metric] || 0;
+function groupMetricValue(item, name, metric) {{
+    var groupData = hourlyGroups(item)[name] || {{}};
+    return groupData[metric] || 0;
 }}
 function renderHourlyLegend() {{
     var legend = document.getElementById("hourly-legend");
     legend.innerHTML = "";
-    modelNames().forEach(function(name) {{
+    groupNames().forEach(function(name) {{
         var item = document.createElement("span");
         item.className = "hourly-legend-item";
-        item.innerHTML = '<span class="hourly-legend-color" style="background:' + colorForModel(name) + '"></span>' + name;
+        item.innerHTML = '<span class="hourly-legend-color" style="background:' + colorForGroup(name) + '"></span>' + groupLabel(name);
         legend.appendChild(item);
     }});
 }}
 function tooltipHtml(item, metric) {{
-    var rows = Object.keys(item.models || {{}}).sort().map(function(name) {{
-        var data = item.models[name] || {{}};
-        return '<div><span style="color:' + colorForModel(name) + '">●</span> ' + name + ': ' +
+    var rows = Object.keys(hourlyGroups(item)).sort().map(function(name) {{
+        var data = hourlyGroups(item)[name] || {{}};
+        var backend = hourlyGroupBy === "aliases" && data.model ? ' → ' + data.model : '';
+        return '<div><span style="color:' + colorForGroup(name) + '">●</span> ' + groupLabel(name) + backend + ': ' +
             fmtMetric(data[metric]) + ' / total ' + fmtMetric(data.total_tokens) +
             ' (P ' + fmtMetric(data.prompt_tokens) + ', C ' + fmtMetric(data.completion_tokens) +
             ', CR ' + fmtMetric(data.cache_read_tokens) + ', CW ' + fmtMetric(data.cache_write_tokens) +
             ', Avg ' + fmtDuration(data.avg_latency_ms) + ', Out ' + fmtDuration(data.latency_per_output_token_ms) + '/tok)</div>';
     }}).join('');
-    return '<strong>Token Details</strong><br>' +
+    return '<strong>Token Details by ' + (hourlyGroupBy === "aliases" ? "Alias" : "Model") + '</strong><br>' +
         item.hour + '<br>' +
         'Requests: ' + fmtMetric(item.requests) + '<br>' +
         'Total Tokens: ' + fmtMetric(item[metric]) + '<br>' +
@@ -779,17 +805,56 @@ function showTooltip(event, html) {{
 function hideTooltip() {{
     document.getElementById("hourly-tooltip").style.display = "none";
 }}
-function showHourlyDetail(item) {{
+function groupedUsageSummary() {{
+    var summary = {{}};
+    hourlyUsageData.forEach(function(item) {{
+        Object.keys(hourlyGroups(item)).forEach(function(name) {{
+            var data = hourlyGroups(item)[name] || {{}};
+            if (!summary[name]) {{
+                summary[name] = {{
+                    model: data.model || "",
+                    requests: 0,
+                    prompt_tokens: 0,
+                    completion_tokens: 0,
+                    cache_read_tokens: 0,
+                    cache_write_tokens: 0,
+                    total_tokens: 0,
+                    total_latency_ms: 0,
+                }};
+            }}
+            summary[name].requests += data.requests || 0;
+            summary[name].prompt_tokens += data.prompt_tokens || 0;
+            summary[name].completion_tokens += data.completion_tokens || 0;
+            summary[name].cache_read_tokens += data.cache_read_tokens || 0;
+            summary[name].cache_write_tokens += data.cache_write_tokens || 0;
+            summary[name].total_tokens += data.total_tokens || 0;
+            summary[name].total_latency_ms += data.total_latency_ms || 0;
+            if (!summary[name].model && data.model) summary[name].model = data.model;
+        }});
+    }});
+    return summary;
+}}
+function renderHourlyDetail() {{
     var detail = document.getElementById("hourly-detail");
-    detail.innerHTML = '<div class="hourly-detail-grid">' +
-        '<div><div class="hourly-detail-label">Hour</div><div class="hourly-detail-value">' + item.hour + '</div></div>' +
-        '<div><div class="hourly-detail-label">Requests</div><div class="hourly-detail-value">' + fmtMetric(item.requests) + '</div></div>' +
-        '<div><div class="hourly-detail-label">Prompt</div><div class="hourly-detail-value">' + fmtMetric(item.prompt_tokens) + '</div></div>' +
-        '<div><div class="hourly-detail-label">Completion</div><div class="hourly-detail-value">' + fmtMetric(item.completion_tokens) + '</div></div>' +
-        '<div><div class="hourly-detail-label">Cache Read</div><div class="hourly-detail-value">' + fmtMetric(item.cache_read_tokens) + '</div></div>' +
-        '<div><div class="hourly-detail-label">Cache Write</div><div class="hourly-detail-value">' + fmtMetric(item.cache_write_tokens) + '</div></div>' +
-        '<div><div class="hourly-detail-label">Total</div><div class="hourly-detail-value">' + fmtMetric(item.total_tokens) + '</div></div>' +
-        '</div>';
+    var summary = groupedUsageSummary();
+    var rows = Object.keys(summary).sort().map(function(name) {{
+        var data = summary[name];
+        var backend = hourlyGroupBy === "aliases" && data.model ? ' → ' + data.model : '';
+        var avg = data.requests ? data.total_latency_ms / data.requests : 0;
+        var perOutput = data.completion_tokens ? data.total_latency_ms / data.completion_tokens : 0;
+        return '<tr class="hourly-detail-row">' +
+            '<td class="hourly-detail-name">' + groupLabel(name) + backend + '</td>' +
+            '<td class="cell-num">' + fmtMetric(data.total_tokens) + '</td>' +
+            '<td class="cell-num">' + fmtMetric(data.requests) + '</td>' +
+            '<td class="cell-num">' + fmtMetric(data.prompt_tokens) + '</td>' +
+            '<td class="cell-num">' + fmtMetric(data.completion_tokens) + '</td>' +
+            '<td class="cell-num">' + fmtMetric(data.cache_read_tokens) + '</td>' +
+            '<td class="cell-num">' + fmtMetric(data.cache_write_tokens) + '</td>' +
+            '<td class="cell-num">' + fmtDuration(avg) + '</td>' +
+            '<td class="cell-num">' + fmtDuration(perOutput) + '/tok</td>' +
+            '</tr>';
+    }}).join('');
+    detail.innerHTML = rows ? '<div class="recent-table-wrap hourly-detail-table-wrap"><table class="recent-table hourly-detail-table"><thead><tr><th>' + (hourlyGroupBy === "aliases" ? "Alias" : "Model") + '</th><th class="cell-num">Total</th><th class="cell-num">Requests</th><th class="cell-num">Prompt</th><th class="cell-num">Completion</th><th class="cell-num">Cache Read</th><th class="cell-num">Cache Write</th><th class="cell-num">Average Latency</th><th class="cell-num">Per Output Token</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '<div class="hourly-detail-empty">No grouped usage in this period.</div>';
 }}
 function renderHourlyChart() {{
     var chart = document.getElementById("hourly-chart");
@@ -807,13 +872,13 @@ function renderHourlyChart() {{
         var bar = document.createElement("div");
         bar.className = "hourly-bar";
         bar.style.height = height + "px";
-        Object.keys(item.models || {{}}).sort().forEach(function(model) {{
-            var modelValue = modelMetricValue(item, model, metric);
-            if (!modelValue) return;
+        Object.keys(hourlyGroups(item)).sort().forEach(function(name) {{
+            var groupValue = groupMetricValue(item, name, metric);
+            if (!groupValue) return;
             var segment = document.createElement("div");
             segment.className = "hourly-segment";
-            segment.style.height = Math.max(2, Math.round((modelValue / value) * height)) + "px";
-            segment.style.background = colorForModel(model);
+            segment.style.height = Math.max(2, Math.round((groupValue / value) * height)) + "px";
+            segment.style.background = colorForGroup(name);
             bar.appendChild(segment);
         }});
         if (!bar.children.length) {{
@@ -828,13 +893,13 @@ function renderHourlyChart() {{
         wrap.innerHTML = '<div class="hourly-bar-value">' + fmtMetric(value) + '</div>';
         wrap.appendChild(bar);
         wrap.insertAdjacentHTML('beforeend', '<div class="hourly-bar-label">' + hourlyLabel(item.hour) + '</div>');
-        wrap.onclick = function() {{ showHourlyDetail(item); }};
+        wrap.onclick = function() {{ renderHourlyDetail(); }};
         wrap.onmousemove = function(event) {{ showTooltip(event, tooltipHtml(item, metric)); }};
         wrap.onmouseleave = hideTooltip;
         chart.appendChild(wrap);
     }});
     renderHourlyLegend();
-    showHourlyDetail(hourlyUsageData[hourlyUsageData.length - 1]);
+    renderHourlyDetail();
 }}
 function toggleDetail(id) {{
     var el = document.getElementById(id);

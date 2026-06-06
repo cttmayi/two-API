@@ -176,8 +176,8 @@ Visit `/` to see an HTML page showing:
 
 - **Overview cards**: Uptime, total requests, model group count
 - **Model configuration table**: Name, backend, API key status
-- **Hourly Token Usage**: Token usage chart for the latest 24 hours, stacked by model with distinct colors; hover to view requests, total tokens, average latency, latency per output token, and per-model details
-- **Recent requests** (last 50): Time, model, provider, streaming flag, status code, latency, input/output tokens, cache read/write, input/output preview
+- **Hourly Token Usage**: Token usage chart for the latest 24 hours, stacked by model or global alias with distinct colors; hours without requests remain visible as empty bars; hover to view requests, total tokens, average latency, latency per output token, and details for the selected grouping
+- **Recent requests** (last 50): Time, alias, model, provider, streaming flag, status code, latency, input/output tokens, cache read/write, input/output preview
   - Click a row to expand and view full request/response content and token usage
   - Individual download button per row to save that request as a JSON file
 

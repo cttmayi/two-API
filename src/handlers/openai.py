@@ -26,13 +26,13 @@ def _dump_body(body: dict) -> bytes:
     return json.dumps(body).encode("utf-8")
 
 
-def _apply_alias(request: Request, body: dict) -> str:
+def _apply_alias(request: Request, body: dict) -> tuple[str, str]:
     model_name = body.get("model", "")
     aliased = request.app.state.config.alias.get(model_name)
     if aliased:
         body["model"] = aliased
-        return aliased
-    return model_name
+        return model_name, aliased
+    return "", model_name
 
 
 async def _prepare_openai_request(request: Request, default_token_field: str):
@@ -47,7 +47,7 @@ async def _prepare_openai_request(request: Request, default_token_field: str):
         return JSONResponse(status_code=400, content={"error": "Missing 'model' field"})
 
     original_body = dict(body_json)
-    model_name = _apply_alias(request, body_json)
+    alias_name, model_name = _apply_alias(request, body_json)
     model_router = _get_router(request)
     match_result = model_router.match(model_name, "openai")
     if match_result is None:
@@ -67,7 +67,7 @@ async def _prepare_openai_request(request: Request, default_token_field: str):
     if body_json != original_body:
         body_bytes = _dump_body(body_json)
 
-    return body_bytes, body_json, model_name, entry
+    return body_bytes, body_json, model_name, backend_model, alias_name, entry
 
 
 def _iter_sse_json(sse_lines: list[str]):
@@ -165,6 +165,7 @@ def _responses_stream_stats(sse_lines: list[str], status_code: int):
 def _record_openai_request(
     *,
     model_name: str,
+    alias_name: str,
     backend_url: str,
     method: str,
     path: str,
@@ -180,6 +181,7 @@ def _record_openai_request(
     logger.info(
         "proxy_request",
         model=model_name,
+        alias=alias_name,
         provider="openai",
         backend=backend_url,
         method=method,
@@ -192,9 +194,11 @@ def _record_openai_request(
     get_stats().record(
         model_name, "openai", prompt_tokens, completion_tokens, latency_ms,
         cache_read_tokens=cache_read_tokens,
+        alias=alias_name,
     )
     get_stats().record_detail(
         model=model_name,
+        alias=alias_name,
         provider="openai",
         streaming=streaming,
         latency_ms=latency_ms,
@@ -242,6 +246,8 @@ def _streaming_proxy_response(
     body_json: dict,
     entry,
     model_name: str,
+    stats_model_name: str,
+    alias_name: str,
     start: float,
     input_messages,
     parse_stats,
@@ -269,7 +275,8 @@ def _streaming_proxy_response(
         latency_ms = int((time.perf_counter() - start) * 1000)
         prompt_tokens, completion_tokens, cache_read_tokens, output_content = parse_stats(sse_lines, status_code)
         _record_openai_request(
-            model_name=model_name,
+            model_name=stats_model_name,
+            alias_name=alias_name,
             backend_url=entry.openai_base_url,
             method=request.method,
             path=request.url.path,
@@ -292,6 +299,8 @@ def _responses_to_chat_streaming_response(
     chat_body: dict,
     entry,
     model_name: str,
+    stats_model_name: str,
+    alias_name: str,
     start: float,
 ):
     async def stream_converted():
@@ -379,7 +388,8 @@ def _responses_to_chat_streaming_response(
             }
         latency_ms = int((time.perf_counter() - start) * 1000)
         _record_openai_request(
-            model_name=model_name,
+            model_name=stats_model_name,
+            alias_name=alias_name,
             backend_url=entry.openai_base_url,
             method=request.method,
             path=request.url.path,
@@ -416,7 +426,7 @@ async def chat_completions(request: Request):
     prepared = await _prepare_openai_request(request, "max_tokens")
     if isinstance(prepared, JSONResponse):
         return prepared
-    body_bytes, body_json, model_name, entry = prepared
+    body_bytes, body_json, model_name, backend_model, alias_name, entry = prepared
     start = time.perf_counter()
 
     try:
@@ -427,6 +437,8 @@ async def chat_completions(request: Request):
                 body_json=body_json,
                 entry=entry,
                 model_name=model_name,
+                stats_model_name=backend_model,
+                alias_name=alias_name,
                 start=start,
                 input_messages=lambda body: body.get("messages", []),
                 parse_stats=_chat_stream_stats,
@@ -453,7 +465,8 @@ async def chat_completions(request: Request):
             output_content = resp.body.decode("utf-8", errors="replace")
 
         _record_openai_request(
-            model_name=model_name,
+            model_name=backend_model,
+            alias_name=alias_name,
             backend_url=entry.openai_base_url,
             method=request.method,
             path=request.url.path,
@@ -479,7 +492,7 @@ async def responses(request: Request):
     prepared = await _prepare_openai_request(request, "max_output_tokens")
     if isinstance(prepared, JSONResponse):
         return prepared
-    body_bytes, body_json, model_name, entry = prepared
+    body_bytes, body_json, model_name, backend_model, alias_name, entry = prepared
     start = time.perf_counter()
 
     try:
@@ -498,6 +511,8 @@ async def responses(request: Request):
                     chat_body=chat_body,
                     entry=entry,
                     model_name=model_name,
+                    stats_model_name=backend_model,
+                    alias_name=alias_name,
                     start=start,
                 )
             chat_body_bytes = _dump_body(chat_body)
@@ -533,7 +548,8 @@ async def responses(request: Request):
                 }
 
             _record_openai_request(
-                model_name=model_name,
+                model_name=backend_model,
+                alias_name=alias_name,
                 backend_url=entry.openai_base_url,
                 method=request.method,
                 path=request.url.path,
@@ -555,6 +571,8 @@ async def responses(request: Request):
                 body_json=body_json,
                 entry=entry,
                 model_name=model_name,
+                stats_model_name=backend_model,
+                alias_name=alias_name,
                 start=start,
                 input_messages=lambda body: messages_to_dicts(responses_request_to_ir(body).messages),
                 parse_stats=_responses_stream_stats,
@@ -581,7 +599,8 @@ async def responses(request: Request):
             output_content = resp.body.decode("utf-8", errors="replace")
 
         _record_openai_request(
-            model_name=model_name,
+            model_name=backend_model,
+            alias_name=alias_name,
             backend_url=entry.openai_base_url,
             method=request.method,
             path=request.url.path,
@@ -624,7 +643,7 @@ async def embeddings(request: Request):
     if not model_name:
         return JSONResponse(status_code=400, content={"error": "Missing 'model' field"})
 
-    model_name = _apply_alias(request, body_json)
+    _, model_name = _apply_alias(request, body_json)
     body_bytes = _dump_body(body_json)
 
     model_router = _get_router(request)

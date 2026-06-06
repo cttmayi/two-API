@@ -18,13 +18,13 @@ def _get_router(request: Request):
     return request.app.state.router
 
 
-def _apply_alias(request: Request, body: dict) -> tuple[str, bytes | None]:
+def _apply_alias(request: Request, body: dict) -> tuple[str, str, bytes | None]:
     model_name = body.get("model", "")
     aliased = request.app.state.config.alias.get(model_name)
     if aliased:
         body["model"] = aliased
-        return aliased, json.dumps(body).encode("utf-8")
-    return model_name, None
+        return model_name, aliased, json.dumps(body).encode("utf-8")
+    return "", model_name, None
 
 
 @router.post("/v1/messages")
@@ -40,7 +40,7 @@ async def messages(request: Request):
     if not model_name:
         return JSONResponse(status_code=400, content={"error": "Missing 'model' field"})
 
-    model_name, new_body = _apply_alias(request, body_json)
+    alias_name, model_name, new_body = _apply_alias(request, body_json)
     if new_body:
         body_bytes = new_body
 
@@ -163,7 +163,7 @@ async def messages(request: Request):
 
                 logger.info(
                     "proxy_request",
-                    model=model_name, provider="anthropic",
+                    model=backend_model, alias=alias_name, provider="anthropic",
                     backend=backend_url, method=request.method,
                     path=request.url.path, latency_ms=latency_ms,
                     status=status_code,
@@ -172,11 +172,12 @@ async def messages(request: Request):
                     cache_read_tokens=cache_read_tokens,
                     cache_write_tokens=cache_write_tokens,
                 )
-                get_stats().record(model_name, "anthropic", input_tokens, output_tokens,
+                get_stats().record(backend_model, "anthropic", input_tokens, output_tokens,
                                    latency_ms, cache_read_tokens=cache_read_tokens,
-                                   cache_write_tokens=cache_write_tokens)
+                                   cache_write_tokens=cache_write_tokens,
+                                   alias=alias_name)
                 get_stats().record_detail(
-                    model=model_name, provider="anthropic", streaming=True,
+                    model=backend_model, alias=alias_name, provider="anthropic", streaming=True,
                     latency_ms=latency_ms, status=status_code,
                     prompt_tokens=input_tokens, completion_tokens=output_tokens,
                     cache_read=cache_read_tokens, cache_write=cache_write_tokens,
@@ -210,7 +211,8 @@ async def messages(request: Request):
 
             logger.info(
                 "proxy_request",
-                model=model_name,
+                model=backend_model,
+                alias=alias_name,
                 provider="anthropic",
                 backend=entry.anthropic_base_url,
                 method=request.method,
@@ -222,11 +224,12 @@ async def messages(request: Request):
                 cache_read_tokens=cache_read_tokens,
                 cache_write_tokens=cache_write_tokens,
             )
-            get_stats().record(model_name, "anthropic", input_tokens, output_tokens, latency_ms,
+            get_stats().record(backend_model, "anthropic", input_tokens, output_tokens, latency_ms,
                                cache_read_tokens=cache_read_tokens,
-                               cache_write_tokens=cache_write_tokens)
+                               cache_write_tokens=cache_write_tokens,
+                               alias=alias_name)
             get_stats().record_detail(
-                model=model_name, provider="anthropic", streaming=False,
+                model=backend_model, alias=alias_name, provider="anthropic", streaming=False,
                 latency_ms=latency_ms, status=resp.status_code,
                 prompt_tokens=input_tokens, completion_tokens=output_tokens,
                 cache_read=cache_read_tokens, cache_write=cache_write_tokens,
