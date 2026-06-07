@@ -156,7 +156,8 @@ class Stats:
                       cache_read: int | None, cache_write: int | None,
                       input_messages: list, output_content,
                       request_body=None,
-                      alias: str | None = None):
+                      alias: str | None = None,
+                      path: str | None = None):
         with self._lock:
             now = datetime.now(TZ).strftime("%H:%M:%S")
             entry = {
@@ -164,6 +165,7 @@ class Stats:
                 "model": model,
                 "alias": alias if alias is not None else "",
                 "provider": provider,
+                "path": path or "",
                 "streaming": streaming,
                 "status": status,
                 "latency_ms": latency_ms,

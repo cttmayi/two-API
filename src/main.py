@@ -215,21 +215,29 @@ async def homepage(request: Request):
 
         input_json = _html.escape(json.dumps(r.get("request_body") or r.get("input_messages", []), ensure_ascii=False, indent=2))
         output_json = _html.escape(json.dumps(r.get("output"), ensure_ascii=False, indent=2))
+        provider_display = r.get("provider", "")
+        path = r.get("path", "")
+        if provider_display == "openai":
+            if "responses" in path:
+                provider_display = "openai-response"
+            elif "chat" in path:
+                provider_display = "openai-chat"
+
         recent_rows += f"""
         <tr class="recent-row" onclick="toggleDetail('{detail_id}')">
             <td class="cell-time">{r.get("time", "")}</td>
             <td>{r.get("alias", "")}</td>
             <td>{r.get("model", "")}</td>
-            <td>{r.get("provider", "")}</td>
+            <td class="cell-provider">{provider_display}</td>
             <td>{stream_badge}</td>
             <td class="{status_cls}">{r.get("status", "")}</td>
-            <td class="cell-num">{r.get("latency_ms", "")}ms</td>
             <td class="cell-num">{_fmt(pt)}</td>
             <td class="cell-num">{_fmt(ct)}</td>
             <td class="cell-num">{_fmt(cr)}</td>
             <td class="cell-num">{_fmt(cw)}</td>
-            <td class="cell-preview" title="{input_preview}">{input_preview}</td>
-            <td class="cell-preview" title="{output_preview}">{output_preview}</td>
+            <td class="cell-num">{r.get("latency_ms", "")}ms</td>
+            <td class="cell-preview cell-preview-wide" title="{input_preview}">{input_preview}</td>
+            <td class="cell-preview cell-preview-wide" title="{output_preview}">{output_preview}</td>
             <td class="cell-save" onclick="event.stopPropagation()"><a href="/recent/download?i={i}" class="save-btn" title="Save">&#128190;</a></td>
         </tr>
         <tr class="detail-row" id="{detail_id}" style="display:none;">
@@ -252,7 +260,7 @@ async def homepage(request: Request):
     total_requests = stats["total_requests"]
     model_count = len(config.models)
     if recent_rows:
-        recent_section = '<table class="recent-table"><thead><tr><th>Time</th><th>Alias</th><th>Model</th><th>Provider</th><th>Stream</th><th>Status</th><th class="cell-num">Latency</th><th class="cell-num">Prompt</th><th class="cell-num">Completion</th><th class="cell-num">Cache Read</th><th class="cell-num">Cache Write</th><th>Input</th><th>Output</th><th></th></tr></thead><tbody>' + recent_rows + '</tbody></table>'
+        recent_section = '<table class="recent-table"><thead><tr><th>Time</th><th>Alias</th><th>Model</th><th>Provider</th><th>Stream</th><th>Status</th><th class="cell-num">Prompt</th><th class="cell-num">Completion</th><th class="cell-num">Cache Read</th><th class="cell-num">Cache Write</th><th class="cell-num">Latency</th><th>Input</th><th>Output</th><th></th></tr></thead><tbody>' + recent_rows + '</tbody></table>'
     else:
         recent_section = '<div class="empty-state">No requests processed yet</div>'
     hourly_json = json.dumps(stats.get("hourly", []), ensure_ascii=False).replace("</", "<\\/")
@@ -272,10 +280,6 @@ body {{
     min-height: 100vh;
     padding: 2.5rem 3rem;
 }}
-
-header {{ margin-bottom: 2rem; }}
-header h1 {{ font-size: 1.6rem; font-weight: 700; color: #1a1a2e; }}
-header .subtitle {{ color: #999; font-size: 0.85rem; margin-top: 0.15rem; }}
 
 .summary {{
     display: flex;
@@ -590,10 +594,13 @@ header .subtitle {{ color: #999; font-size: 0.85rem; margin-top: 0.15rem; }}
 .cell-preview {{
     font-size: 0.78rem;
     color: #555;
-    max-width: 180px;
+    max-width: 220px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}}
+.cell-preview-wide {{
+    max-width: 420px;
 }}
 .cell-save {{ text-align: center; width: 40px; }}
 .save-btn {{ text-decoration: none; font-size: 0.85rem; opacity: 0.5; transition: opacity 0.15s; }}
@@ -659,25 +666,26 @@ footer {{
 </head>
 <body>
 
-<header>
-    <h1>two-API Proxy</h1>
-    <div class="subtitle">LLM API Proxy &mdash; OpenAI &amp; Anthropic compatible</div>
+<header style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem;">
+    <div>
+        <h1 style="font-size:1.6rem; font-weight:700; color:#1a1a2e;">two-API Proxy</h1>
+        <div style="color:#999; font-size:0.85rem; margin-top:0.15rem;">LLM API Proxy &mdash; OpenAI &amp; Anthropic compatible</div>
+    </div>
+    <div class="summary" style="margin-bottom:0;">
+        <div class="summary-card">
+            <div class="value">{uptime_m}m {uptime_s}s</div>
+            <div class="label">Uptime</div>
+        </div>
+        <div class="summary-card">
+            <div class="value">{total_requests}</div>
+            <div class="label">Total Requests</div>
+        </div>
+        <div class="summary-card">
+            <div class="value">{model_count}</div>
+            <div class="label">Model Groups</div>
+        </div>
+    </div>
 </header>
-
-<div class="summary">
-    <div class="summary-card">
-        <div class="value">{uptime_m}m {uptime_s}s</div>
-        <div class="label">Uptime</div>
-    </div>
-    <div class="summary-card">
-        <div class="value">{total_requests}</div>
-        <div class="label">Total Requests</div>
-    </div>
-    <div class="summary-card">
-        <div class="value">{model_count}</div>
-        <div class="label">Model Groups</div>
-    </div>
-</div>
 
 <div class="section">
     <div class="section-title" style="cursor:pointer; user-select:none;" onclick="toggleSection('config-body')">

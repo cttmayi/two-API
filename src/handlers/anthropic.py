@@ -178,7 +178,7 @@ async def messages(request: Request):
                                    cache_write_tokens=cache_write_tokens,
                                    alias=alias_name)
                 get_stats().record_detail(
-                    model=backend_model, alias=alias_name, provider="anthropic", streaming=True,
+                    model=backend_model, alias=alias_name, provider="anthropic", path=request.url.path, streaming=True,
                     latency_ms=latency_ms, status=status_code,
                     prompt_tokens=input_tokens, completion_tokens=output_tokens,
                     cache_read=cache_read_tokens, cache_write=cache_write_tokens,
@@ -231,7 +231,7 @@ async def messages(request: Request):
                                cache_write_tokens=cache_write_tokens,
                                alias=alias_name)
             get_stats().record_detail(
-                model=backend_model, alias=alias_name, provider="anthropic", streaming=False,
+                model=backend_model, alias=alias_name, provider="anthropic", path=request.url.path, streaming=False,
                 latency_ms=latency_ms, status=resp.status_code,
                 prompt_tokens=input_tokens, completion_tokens=output_tokens,
                 cache_read=cache_read_tokens, cache_write=cache_write_tokens,

@@ -155,6 +155,7 @@ def _responses_stream_stats(sse_lines: list[str], status_code: int):
     cache_read_tokens = None
     output_text = ""
     output_content = {"output_text": output_text}
+    func_calls: dict[str, dict] = {}
 
     if status_code != 200:
         return None, None, None, "\n".join(sse_lines)
@@ -163,6 +164,29 @@ def _responses_stream_stats(sse_lines: list[str], status_code: int):
         if data.get("type") == "response.output_text.delta" and data.get("delta"):
             output_text += data["delta"]
             output_content["output_text"] = output_text
+        if data.get("type") == "response.output_item.added":
+            item = data.get("item", {})
+            if item.get("type") == "function_call":
+                item_id = item.get("id", "")
+                func_calls[item_id] = {"name": item.get("name", ""), "arguments": ""}
+        if data.get("type") == "response.function_call.arguments.delta":
+            item_id = data.get("item_id", "")
+            delta = data.get("delta", "")
+            if item_id in func_calls:
+                func_calls[item_id]["arguments"] += delta
+            else:
+                func_calls[item_id] = {"name": "", "arguments": delta}
+        if data.get("type") == "response.function_call.arguments.done":
+            item_id = data.get("item_id", "")
+            if item_id in func_calls:
+                func_calls[item_id]["arguments"] = data.get("arguments", "")
+            else:
+                func_calls[item_id] = {"name": "", "arguments": data.get("arguments", "")}
+        if data.get("type") == "response.output_item.done":
+            item = data.get("item", {})
+            if item.get("type") == "function_call":
+                item_id = item.get("id", "")
+                func_calls[item_id] = {"name": item.get("name", ""), "arguments": item.get("arguments", "")}
         response = data.get("response", {})
         usage = data.get("usage") or response.get("usage", {})
         if usage:
@@ -173,6 +197,12 @@ def _responses_stream_stats(sse_lines: list[str], status_code: int):
                 output_tokens = usage.get("output_tokens")
             if cache_read_tokens is None:
                 cache_read_tokens = _cache_read_tokens_from_usage(usage)
+
+    if func_calls:
+        output_content["tool_calls"] = [
+            {"id": item_id, "type": "function", "function": {"name": fc["name"], "arguments": fc["arguments"]}}
+            for item_id, fc in func_calls.items()
+        ]
 
     return input_tokens, output_tokens, cache_read_tokens, output_content
 
@@ -216,6 +246,7 @@ def _record_openai_request(
         model=model_name,
         alias=alias_name,
         provider="openai",
+        path=path,
         streaming=streaming,
         latency_ms=latency_ms,
         status=status_code,
@@ -484,7 +515,7 @@ async def chat_completions(request: Request):
             prompt_tokens = usage.get("prompt_tokens")
             completion_tokens = usage.get("completion_tokens")
             cache_read_tokens = _cache_read_tokens_from_usage(usage)
-            output_content = resp_body.get("choices", [{}])[0].get("message")
+            output_content = resp_body
         except (json.JSONDecodeError, UnicodeDecodeError):
             pass
 
