@@ -47,6 +47,9 @@ def test_record_aggregates_hourly_token_usage():
     assert hourly[0]["avg_latency_ms"] == 90.5
     assert hourly[0]["latency_per_output_token_ms"] == 49.7
     assert hourly[0]["hour"].endswith(":00")
+    assert hourly[0]["aliases"][""]["gpt-4o"]["requests"] == 2
+    assert hourly[0]["aliases"][""]["gpt-4o"]["prompt_tokens"] == 17
+    assert hourly[0]["aliases"][""]["gpt-4o"]["completion_tokens"] == 9
 
 
 def test_hourly_usage_is_loaded_from_file(tmp_path):
@@ -77,7 +80,6 @@ def test_hourly_usage_is_loaded_from_file(tmp_path):
             "cache_write_tokens": 0,
             "total_tokens": 15,
             "total_latency_ms": 0,
-            "models": {},
             "aliases": {},
             "avg_latency_ms": 0,
             "latency_per_output_token_ms": 0,
@@ -99,8 +101,8 @@ def test_record_persists_hourly_usage_to_file(tmp_path):
     assert hourly[0]["completion_tokens"] == 6
     assert hourly[0]["cache_read_tokens"] == 2
     assert hourly[0]["total_tokens"] == 10
-    assert hourly[0]["aliases"][""]["model"] == "gpt-4o"
-    assert hourly[0]["aliases"][""]["requests"] == 1
+    assert hourly[0]["aliases"][""]["gpt-4o"]["requests"] == 1
+    assert hourly[0]["aliases"][""]["gpt-4o"]["provider"] == "openai"
 
 
 def test_snapshot_limits_hourly_usage_to_latest_24_items(tmp_path):
@@ -144,7 +146,7 @@ def test_hourly_usage_tracks_models_separately():
     stats.record("ark-deepseek-v4-flash", "openai", 7, 3, 90)
     stats.record("gpt-4o", "openai", 2, 1, 50)
 
-    models = stats.snapshot()["hourly"][0]["models"]
+    models = stats.snapshot()["hourly"][0]["aliases"][""]
 
     assert models["gpt-4o"]["requests"] == 2
     assert models["gpt-4o"]["prompt_tokens"] == 12
@@ -164,15 +166,11 @@ def test_hourly_usage_tracks_aliases_separately_from_models():
 
     hourly = stats.snapshot()["hourly"][0]
 
-    assert hourly["models"]["gpt-4o-mini"]["requests"] == 2
-    assert hourly["models"]["gpt-4o-mini"]["total_tokens"] == 26
-    assert hourly["aliases"]["default"]["model"] == "gpt-4o-mini"
-    assert hourly["aliases"]["default"]["requests"] == 1
-    assert hourly["aliases"]["default"]["total_tokens"] == 15
-    assert hourly["aliases"]["fast"]["model"] == "gpt-4o-mini"
-    assert hourly["aliases"]["fast"]["requests"] == 1
-    assert hourly["aliases"]["fast"]["total_tokens"] == 11
-    assert hourly["aliases"]["fast"]["cache_read_tokens"] == 2
+    assert hourly["aliases"]["default"]["gpt-4o-mini"]["requests"] == 1
+    assert hourly["aliases"]["default"]["gpt-4o-mini"]["total_tokens"] == 15
+    assert hourly["aliases"]["fast"]["gpt-4o-mini"]["requests"] == 1
+    assert hourly["aliases"]["fast"]["gpt-4o-mini"]["total_tokens"] == 11
+    assert hourly["aliases"]["fast"]["gpt-4o-mini"]["cache_read_tokens"] == 2
 
 
 def test_hourly_usage_uses_empty_alias_for_non_alias_requests():
@@ -182,9 +180,8 @@ def test_hourly_usage_uses_empty_alias_for_non_alias_requests():
 
     aliases = stats.snapshot()["hourly"][0]["aliases"]
 
-    assert aliases[""]["model"] == "gpt-4o"
-    assert aliases[""]["requests"] == 1
-    assert aliases[""]["total_tokens"] == 3
+    assert aliases[""]["gpt-4o"]["requests"] == 1
+    assert aliases[""]["gpt-4o"]["total_tokens"] == 3
 
 
 def test_record_detail_includes_alias_field():

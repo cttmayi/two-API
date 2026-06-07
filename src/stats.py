@@ -37,11 +37,24 @@ def _truncate_text(v):
     return v
 
 
+def _convert_old_aliases(aliases: dict) -> dict:
+    """Convert old flat alias format to new nested alias->model->stats format."""
+    converted = {}
+    for key, value in aliases.items():
+        if isinstance(value, dict) and "model" in value:
+            # Old format: {"alias": {"model": "gpt-4o", "requests": 1, ...}}
+            model_name = value.pop("model")
+            converted.setdefault(key, {})[model_name] = value
+        else:
+            # Already new format or empty
+            converted[key] = value
+    return converted
+
+
 class Stats:
     def __init__(self, usage_path: str | None = None):
         self._lock = threading.Lock()
         self._started_at = time.time()
-        self._models: dict[str, dict] = {}
         self._recent: deque[dict] = deque(maxlen=50)
         self._hourly: dict[str, dict] = {}
         self._usage_path = os.path.expanduser(usage_path) if usage_path else None
@@ -58,6 +71,7 @@ class Stats:
         for item in data.get("hourly", []):
             hour = item.get("hour")
             if hour:
+                aliases = _convert_old_aliases(item.get("aliases") or {})
                 self._hourly[hour] = {
                     "hour": hour,
                     "requests": item.get("requests") or 0,
@@ -67,8 +81,7 @@ class Stats:
                     "cache_write_tokens": item.get("cache_write_tokens") or 0,
                     "total_tokens": item.get("total_tokens") or 0,
                     "total_latency_ms": item.get("total_latency_ms") or 0,
-                    "models": item.get("models") or {},
-                    "aliases": item.get("aliases") or {},
+                    "aliases": aliases,
                 }
 
     def _save_hourly_usage(self):
@@ -85,29 +98,6 @@ class Stats:
                alias: str | None = None):
         alias_name = alias if alias is not None else ""
         with self._lock:
-            if model not in self._models:
-                self._models[model] = {
-                    "provider": provider,
-                    "requests": 0,
-                    "prompt_tokens": 0,
-                    "completion_tokens": 0,
-                    "cache_read_tokens": 0,
-                    "cache_write_tokens": 0,
-                    "total_latency_ms": 0,
-                }
-            m = self._models[model]
-            m["requests"] += 1
-            if prompt_tokens:
-                m["prompt_tokens"] += prompt_tokens
-            if completion_tokens:
-                m["completion_tokens"] += completion_tokens
-            if cache_read_tokens:
-                m["cache_read_tokens"] += cache_read_tokens
-            if cache_write_tokens:
-                m["cache_write_tokens"] += cache_write_tokens
-            if latency_ms:
-                m["total_latency_ms"] += latency_ms
-
             hour = datetime.now(TZ).replace(minute=0, second=0, microsecond=0).strftime("%Y-%m-%d %H:%M")
             if hour not in self._hourly:
                 self._hourly[hour] = {
@@ -119,26 +109,14 @@ class Stats:
                     "cache_write_tokens": 0,
                     "total_tokens": 0,
                     "total_latency_ms": 0,
-                    "models": {},
                     "aliases": {},
                 }
             h = self._hourly[hour]
-            h.setdefault("models", {})
             h.setdefault("aliases", {})
-            if model not in h["models"]:
-                h["models"][model] = {
-                    "provider": provider,
-                    "requests": 0,
-                    "prompt_tokens": 0,
-                    "completion_tokens": 0,
-                    "cache_read_tokens": 0,
-                    "cache_write_tokens": 0,
-                    "total_tokens": 0,
-                    "total_latency_ms": 0,
-                }
             if alias_name not in h["aliases"]:
-                h["aliases"][alias_name] = {
-                    "model": model,
+                h["aliases"][alias_name] = {}
+            if model not in h["aliases"][alias_name]:
+                h["aliases"][alias_name][model] = {
                     "provider": provider,
                     "requests": 0,
                     "prompt_tokens": 0,
@@ -148,36 +126,27 @@ class Stats:
                     "total_tokens": 0,
                     "total_latency_ms": 0,
                 }
-            hm = h["models"][model]
-            ha = h["aliases"][alias_name]
+            ha = h["aliases"][alias_name][model]
             h["requests"] += 1
-            hm["requests"] += 1
             ha["requests"] += 1
             if latency_ms:
                 h["total_latency_ms"] += latency_ms
-                hm["total_latency_ms"] += latency_ms
                 ha["total_latency_ms"] += latency_ms
             if prompt_tokens:
                 h["prompt_tokens"] += prompt_tokens
                 h["total_tokens"] += prompt_tokens
-                hm["prompt_tokens"] += prompt_tokens
-                hm["total_tokens"] += prompt_tokens
                 ha["prompt_tokens"] += prompt_tokens
                 ha["total_tokens"] += prompt_tokens
             if completion_tokens:
                 h["completion_tokens"] += completion_tokens
                 h["total_tokens"] += completion_tokens
-                hm["completion_tokens"] += completion_tokens
-                hm["total_tokens"] += completion_tokens
                 ha["completion_tokens"] += completion_tokens
                 ha["total_tokens"] += completion_tokens
             if cache_read_tokens:
                 h["cache_read_tokens"] += cache_read_tokens
-                hm["cache_read_tokens"] += cache_read_tokens
                 ha["cache_read_tokens"] += cache_read_tokens
             if cache_write_tokens:
                 h["cache_write_tokens"] += cache_write_tokens
-                hm["cache_write_tokens"] += cache_write_tokens
                 ha["cache_write_tokens"] += cache_write_tokens
             self._save_hourly_usage()
 
@@ -211,9 +180,6 @@ class Stats:
 
     def snapshot(self) -> dict:
         with self._lock:
-            models = {}
-            for name, m in self._models.items():
-                models[name] = dict(m)
             hourly = []
             hour_keys = sorted(self._hourly)
             if hour_keys:
@@ -231,30 +197,55 @@ class Stats:
                         "cache_write_tokens": 0,
                         "total_tokens": 0,
                         "total_latency_ms": 0,
-                        "models": {},
                         "aliases": {},
                     })
                     item["avg_latency_ms"] = round(item["total_latency_ms"] / item["requests"], 1) if item["requests"] else 0
                     item["latency_per_output_token_ms"] = round(item["completion_tokens"] * 1000 / item["total_latency_ms"], 1) if item["completion_tokens"] and item["total_latency_ms"] else 0
-                    item["models"] = {}
-                    for model, model_data in self._hourly.get(hour, {}).get("models", {}).items():
-                        model_item = dict(model_data)
-                        model_item.setdefault("total_latency_ms", 0)
-                        model_item["avg_latency_ms"] = round(model_item["total_latency_ms"] / model_item["requests"], 1) if model_item["requests"] else 0
-                        model_item["latency_per_output_token_ms"] = round(model_item["completion_tokens"] * 1000 / model_item["total_latency_ms"], 1) if model_item["completion_tokens"] and model_item["total_latency_ms"] else 0
-                        item["models"][model] = model_item
                     item["aliases"] = {}
-                    for alias, alias_data in self._hourly.get(hour, {}).get("aliases", {}).items():
-                        alias_item = dict(alias_data)
-                        alias_item.setdefault("total_latency_ms", 0)
-                        alias_item["avg_latency_ms"] = round(alias_item["total_latency_ms"] / alias_item["requests"], 1) if alias_item["requests"] else 0
-                        alias_item["latency_per_output_token_ms"] = round(alias_item["completion_tokens"] * 1000 / alias_item["total_latency_ms"], 1) if alias_item["completion_tokens"] and alias_item["total_latency_ms"] else 0
-                        item["aliases"][alias] = alias_item
+                    for alias_name, models in self._hourly.get(hour, {}).get("aliases", {}).items():
+                        item["aliases"][alias_name] = {}
+                        for model_name, model_data in models.items():
+                            model_item = dict(model_data)
+                            model_item.setdefault("total_latency_ms", 0)
+                            model_item["avg_latency_ms"] = round(model_item["total_latency_ms"] / model_item["requests"], 1) if model_item["requests"] else 0
+                            model_item["latency_per_output_token_ms"] = round(model_item["completion_tokens"] * 1000 / model_item["total_latency_ms"], 1) if model_item["completion_tokens"] and model_item["total_latency_ms"] else 0
+                            item["aliases"][alias_name][model_name] = model_item
                     hourly.append(item)
                     current += timedelta(hours=1)
+
+            total_requests = sum(
+                model_data["requests"]
+                for h in self._hourly.values()
+                for models in h.get("aliases", {}).values()
+                for model_data in models.values()
+            )
+
+            # Compute model cards from aliases
+            models = {}
+            for h in self._hourly.values():
+                for models_dict in h.get("aliases", {}).values():
+                    for model_name, model_data in models_dict.items():
+                        if model_name not in models:
+                            models[model_name] = {
+                                "provider": model_data.get("provider", ""),
+                                "requests": 0,
+                                "prompt_tokens": 0,
+                                "completion_tokens": 0,
+                                "cache_read_tokens": 0,
+                                "cache_write_tokens": 0,
+                                "total_latency_ms": 0,
+                            }
+                        m = models[model_name]
+                        m["requests"] += model_data.get("requests", 0)
+                        m["prompt_tokens"] += model_data.get("prompt_tokens", 0)
+                        m["completion_tokens"] += model_data.get("completion_tokens", 0)
+                        m["cache_read_tokens"] += model_data.get("cache_read_tokens", 0)
+                        m["cache_write_tokens"] += model_data.get("cache_write_tokens", 0)
+                        m["total_latency_ms"] += model_data.get("total_latency_ms", 0)
+
             return {
                 "uptime_seconds": int(time.time() - self._started_at),
-                "total_requests": sum(m["requests"] for m in self._models.values()),
+                "total_requests": total_requests,
                 "models": models,
                 "recent": list(self._recent),
                 "hourly": hourly,

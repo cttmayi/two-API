@@ -463,7 +463,7 @@ async def chat_completions(request: Request):
                 body_json=body_json,
                 entry=entry,
                 model_name=model_name,
-                stats_model_name=backend_model,
+                stats_model_name=model_name,
                 alias_name=alias_name,
                 start=start,
                 input_messages=lambda body: body.get("messages", []),
@@ -492,7 +492,7 @@ async def chat_completions(request: Request):
             output_content = resp.body.decode("utf-8", errors="replace")
 
         _record_openai_request(
-            model_name=backend_model,
+            model_name=model_name,
             alias_name=alias_name,
             backend_url=entry.openai_base_url,
             method=request.method,
@@ -539,7 +539,7 @@ async def responses(request: Request):
                     chat_body=chat_body,
                     entry=entry,
                     model_name=model_name,
-                    stats_model_name=backend_model,
+                    stats_model_name=model_name,
                     alias_name=alias_name,
                     start=start,
                     request_body=original_body,
@@ -578,7 +578,7 @@ async def responses(request: Request):
                 }
 
             _record_openai_request(
-                model_name=backend_model,
+                model_name=model_name,
                 alias_name=alias_name,
                 backend_url=entry.openai_base_url,
                 method=request.method,
@@ -602,7 +602,7 @@ async def responses(request: Request):
                 body_json=body_json,
                 entry=entry,
                 model_name=model_name,
-                stats_model_name=backend_model,
+                stats_model_name=model_name,
                 alias_name=alias_name,
                 start=start,
                 input_messages=lambda body: messages_to_dicts(responses_request_to_ir(body).messages),
@@ -631,7 +631,7 @@ async def responses(request: Request):
             output_content = resp.body.decode("utf-8", errors="replace")
 
         _record_openai_request(
-            model_name=backend_model,
+            model_name=model_name,
             alias_name=alias_name,
             backend_url=entry.openai_base_url,
             method=request.method,

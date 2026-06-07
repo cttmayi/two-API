@@ -44,7 +44,7 @@ async def test_homepage_renders_hourly_usage_chart():
 
     assert resp.status_code == 200
     assert "Usage Statistics" not in resp.text
-    assert '<div class="section-title">Hourly Token Usage</div>' in resp.text
+    assert '<div class="section-title" style="cursor:pointer; user-select:none;" onclick="toggleSection(\'hourly-body\')">' in resp.text
     assert "hourly-title" not in resp.text
     assert "hourlyUsageData" in resp.text
     assert "hourly-chart" in resp.text
@@ -101,19 +101,20 @@ async def test_homepage_preserves_empty_hourly_chart_gaps():
             "cache_write_tokens": 0,
             "total_tokens": 15,
             "total_latency_ms": 100,
-            "models": {
-                "gpt-4o": {
-                    "provider": "openai",
-                    "requests": 1,
-                    "prompt_tokens": 10,
-                    "completion_tokens": 5,
-                    "cache_read_tokens": 0,
-                    "cache_write_tokens": 0,
-                    "total_tokens": 15,
-                    "total_latency_ms": 100,
-                }
+            "aliases": {
+                "": {
+                    "gpt-4o": {
+                        "provider": "openai",
+                        "requests": 1,
+                        "prompt_tokens": 10,
+                        "completion_tokens": 5,
+                        "cache_read_tokens": 0,
+                        "cache_write_tokens": 0,
+                        "total_tokens": 15,
+                        "total_latency_ms": 100,
+                    }
+                },
             },
-            "aliases": {},
         },
         "2026-06-07 12:00": {
             "hour": "2026-06-07 12:00",
@@ -124,19 +125,20 @@ async def test_homepage_preserves_empty_hourly_chart_gaps():
             "cache_write_tokens": 0,
             "total_tokens": 30,
             "total_latency_ms": 120,
-            "models": {
-                "gpt-4o": {
-                    "provider": "openai",
-                    "requests": 1,
-                    "prompt_tokens": 20,
-                    "completion_tokens": 10,
-                    "cache_read_tokens": 0,
-                    "cache_write_tokens": 0,
-                    "total_tokens": 30,
-                    "total_latency_ms": 120,
-                }
+            "aliases": {
+                "": {
+                    "gpt-4o": {
+                        "provider": "openai",
+                        "requests": 1,
+                        "prompt_tokens": 20,
+                        "completion_tokens": 10,
+                        "cache_read_tokens": 0,
+                        "cache_write_tokens": 0,
+                        "total_tokens": 30,
+                        "total_latency_ms": 120,
+                    }
+                },
             },
-            "aliases": {},
         },
     }
 
@@ -166,11 +168,11 @@ async def test_homepage_renders_hourly_group_by_model_or_alias_control():
     assert resp.status_code == 200
     assert "hourly-group-by" in resp.text
     assert "Group by" in resp.text
-    assert '<option value="models">Model</option>' in resp.text
-    assert '<option value="aliases">Alias</option>' in resp.text
+    assert '<option value="aliases" selected>ALIAS</option>' in resp.text
+    assert '<option value="models">MODEL</option>' in resp.text
     assert "function setHourlyGroup" in resp.text
     assert "function hourlyGroups" in resp.text
-    assert "item[hourlyGroupBy]" in resp.text
+    assert "metricValue(item," in resp.text
     assert "hourlyGroupBy === \"aliases\" && !Object.keys(groups).length" not in resp.text
     assert "default" in resp.text
 
@@ -192,30 +194,19 @@ async def test_homepage_renders_24_hour_grouped_usage_detail():
             "cache_write_tokens": 2,
             "total_tokens": 15,
             "total_latency_ms": 100,
-            "models": {
-                "gpt-4o": {
-                    "provider": "openai",
-                    "requests": 1,
-                    "prompt_tokens": 10,
-                    "completion_tokens": 5,
-                    "cache_read_tokens": 1,
-                    "cache_write_tokens": 2,
-                    "total_tokens": 15,
-                    "total_latency_ms": 100,
-                }
-            },
             "aliases": {
-                "default": {
-                    "model": "gpt-4o",
-                    "provider": "openai",
-                    "requests": 1,
-                    "prompt_tokens": 10,
-                    "completion_tokens": 5,
-                    "cache_read_tokens": 1,
-                    "cache_write_tokens": 2,
-                    "total_tokens": 15,
-                    "total_latency_ms": 100,
-                }
+                "": {
+                    "gpt-4o": {
+                        "provider": "openai",
+                        "requests": 1,
+                        "prompt_tokens": 10,
+                        "completion_tokens": 5,
+                        "cache_read_tokens": 1,
+                        "cache_write_tokens": 2,
+                        "total_tokens": 15,
+                        "total_latency_ms": 100,
+                    }
+                },
             },
         },
         "2026-06-07 11:00": {
@@ -227,30 +218,19 @@ async def test_homepage_renders_24_hour_grouped_usage_detail():
             "cache_write_tokens": 4,
             "total_tokens": 30,
             "total_latency_ms": 200,
-            "models": {
-                "gpt-4o-mini": {
-                    "provider": "openai",
-                    "requests": 1,
-                    "prompt_tokens": 20,
-                    "completion_tokens": 10,
-                    "cache_read_tokens": 3,
-                    "cache_write_tokens": 4,
-                    "total_tokens": 30,
-                    "total_latency_ms": 200,
-                }
-            },
             "aliases": {
                 "fast": {
-                    "model": "gpt-4o-mini",
-                    "provider": "openai",
-                    "requests": 1,
-                    "prompt_tokens": 20,
-                    "completion_tokens": 10,
-                    "cache_read_tokens": 3,
-                    "cache_write_tokens": 4,
-                    "total_tokens": 30,
-                    "total_latency_ms": 200,
-                }
+                    "gpt-4o-mini": {
+                        "provider": "openai",
+                        "requests": 1,
+                        "prompt_tokens": 20,
+                        "completion_tokens": 10,
+                        "cache_read_tokens": 3,
+                        "cache_write_tokens": 4,
+                        "total_tokens": 30,
+                        "total_latency_ms": 200,
+                    }
+                },
             },
         },
     }
@@ -272,7 +252,7 @@ async def test_homepage_renders_24_hour_grouped_usage_detail():
     assert "Tokens/s" in resp.text
     assert "hourly-detail-row" in resp.text
     assert "hourly-detail-name" in resp.text
-    assert "Object.keys(summary).sort().map(function(name)" in resp.text
+    assert "Object.keys(rows).sort().map(function(key)" in resp.text
     assert "showHourlyDetail(hourlyUsageData[hourlyUsageData.length - 1])" not in resp.text
     assert "renderHourlyDetail();" in resp.text
     assert "setHourlyGroup(this.value)" in resp.text

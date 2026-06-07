@@ -146,12 +146,11 @@ class TestOpenAIEndpoints:
         assert resp.status_code == 200
         snapshot = get_stats().snapshot()
         recent = snapshot["recent"][0]
-        assert recent["model"] == "gpt-4o-mini"
+        assert recent["model"] == "fast"
         assert recent["alias"] == "default"
         hourly = snapshot["hourly"][0]
-        assert hourly["models"]["gpt-4o-mini"]["requests"] == 1
-        assert hourly["aliases"]["default"]["model"] == "gpt-4o-mini"
-        assert hourly["aliases"]["default"]["requests"] == 1
+        assert hourly["aliases"]["default"]["fast"]["requests"] == 1
+        assert "fast" in hourly["aliases"]["default"]
 
     @pytest.mark.asyncio
     async def test_chat_completions_records_empty_alias_when_no_global_alias(self, client, app_with_models):
@@ -182,9 +181,9 @@ class TestOpenAIEndpoints:
 
         assert resp.status_code == 200
         snapshot = get_stats().snapshot()
-        assert snapshot["recent"][0]["model"] == "gpt-4o-mini"
+        assert snapshot["recent"][0]["model"] == "fast"
         assert snapshot["recent"][0]["alias"] == ""
-        assert snapshot["hourly"][0]["aliases"][""]["model"] == "gpt-4o-mini"
+        assert snapshot["hourly"][0]["aliases"][""]["fast"]["requests"] == 1
 
     @pytest.mark.asyncio
     async def test_chat_completions_max_tokens_default(self, client, app_with_models):
@@ -978,8 +977,8 @@ class TestAnthropicEndpoints:
         assert recent["model"] == "claude-sonnet-4-6"
         assert recent["alias"] == "default"
         hourly = snapshot["hourly"][0]
-        assert hourly["models"]["claude-sonnet-4-6"]["requests"] == 1
-        assert hourly["aliases"]["default"]["model"] == "claude-sonnet-4-6"
+        assert hourly["aliases"]["default"]["claude-sonnet-4-6"]["requests"] == 1
+        assert "claude-sonnet-4-6" in hourly["aliases"]["default"]
 
     @pytest.mark.asyncio
     async def test_messages_max_tokens_default(self, client, app_with_models):
