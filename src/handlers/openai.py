@@ -67,7 +67,7 @@ async def _prepare_openai_request(request: Request, default_token_field: str):
     if body_json != original_body:
         body_bytes = _dump_body(body_json)
 
-    return body_bytes, body_json, model_name, backend_model, alias_name, entry
+    return body_bytes, body_json, model_name, backend_model, alias_name, entry, original_body
 
 
 def _iter_sse_json(sse_lines: list[str]):
@@ -192,6 +192,7 @@ def _record_openai_request(
     streaming: bool,
     input_messages,
     output_content,
+    request_body=None,
 ):
     logger.info(
         "proxy_request",
@@ -224,6 +225,7 @@ def _record_openai_request(
         cache_write=None,
         input_messages=input_messages,
         output_content=output_content,
+        request_body=request_body,
     )
 
 
@@ -266,6 +268,7 @@ def _streaming_proxy_response(
     start: float,
     input_messages,
     parse_stats,
+    request_body=None,
 ):
     async def stream_with_stats():
         url = _build_backend_url(entry.openai_base_url, request.url.path, request.url.query)
@@ -303,6 +306,7 @@ def _streaming_proxy_response(
             streaming=True,
             input_messages=input_messages(body_json),
             output_content=output_content,
+            request_body=request_body,
         )
 
     return StreamingResponse(stream_with_stats(), media_type="text/event-stream")
@@ -317,6 +321,7 @@ def _responses_to_chat_streaming_response(
     stats_model_name: str,
     alias_name: str,
     start: float,
+    request_body=None,
 ):
     async def stream_converted():
         chat_body_bytes = _dump_body(chat_body)
@@ -433,6 +438,7 @@ def _responses_to_chat_streaming_response(
             streaming=True,
             input_messages=chat_body.get("messages", []),
             output_content=detail_output if status_code == 200 else output_content,
+            request_body=request_body,
         )
         completed_event = responses_stream_event_from_ir(StreamEventIR(type="response_completed", response=completed_response))
         if completed_event:
@@ -446,7 +452,7 @@ async def chat_completions(request: Request):
     prepared = await _prepare_openai_request(request, "max_tokens")
     if isinstance(prepared, JSONResponse):
         return prepared
-    body_bytes, body_json, model_name, backend_model, alias_name, entry = prepared
+    body_bytes, body_json, model_name, backend_model, alias_name, entry, original_body = prepared
     start = time.perf_counter()
 
     try:
@@ -462,6 +468,7 @@ async def chat_completions(request: Request):
                 start=start,
                 input_messages=lambda body: body.get("messages", []),
                 parse_stats=_chat_stream_stats,
+                request_body=original_body,
             )
 
         resp = await forward_non_stream(request, entry.openai_base_url, entry.api_key, body=body_bytes)
@@ -498,6 +505,7 @@ async def chat_completions(request: Request):
             streaming=False,
             input_messages=body_json.get("messages", []),
             output_content=output_content,
+            request_body=original_body,
         )
         return resp
     except httpx.ConnectError:
@@ -512,7 +520,7 @@ async def responses(request: Request):
     prepared = await _prepare_openai_request(request, "max_output_tokens")
     if isinstance(prepared, JSONResponse):
         return prepared
-    body_bytes, body_json, model_name, backend_model, alias_name, entry = prepared
+    body_bytes, body_json, model_name, backend_model, alias_name, entry, original_body = prepared
     start = time.perf_counter()
 
     try:
@@ -534,6 +542,7 @@ async def responses(request: Request):
                     stats_model_name=backend_model,
                     alias_name=alias_name,
                     start=start,
+                    request_body=original_body,
                 )
             chat_body_bytes = _dump_body(chat_body)
             chat_request = Request(request.scope, request.receive)
@@ -582,6 +591,7 @@ async def responses(request: Request):
                 streaming=False,
                 input_messages=chat_body.get("messages", []),
                 output_content=output_content,
+                request_body=original_body,
             )
             return resp
 
@@ -597,6 +607,7 @@ async def responses(request: Request):
                 start=start,
                 input_messages=lambda body: messages_to_dicts(responses_request_to_ir(body).messages),
                 parse_stats=_responses_stream_stats,
+                request_body=original_body,
             )
 
         resp = await forward_non_stream(request, entry.openai_base_url, entry.api_key, body=body_bytes)
@@ -633,6 +644,7 @@ async def responses(request: Request):
             streaming=False,
             input_messages=[{"role": "user", "content": body_json.get("input", "")}],
             output_content=output_content,
+            request_body=original_body,
         )
         return resp
     except httpx.ConnectError:

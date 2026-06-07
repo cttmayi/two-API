@@ -45,7 +45,7 @@ def test_record_aggregates_hourly_token_usage():
     assert hourly[0]["total_tokens"] == 26
     assert hourly[0]["total_latency_ms"] == 181
     assert hourly[0]["avg_latency_ms"] == 90.5
-    assert hourly[0]["latency_per_output_token_ms"] == 20.1
+    assert hourly[0]["latency_per_output_token_ms"] == 49.7
     assert hourly[0]["hour"].endswith(":00")
 
 

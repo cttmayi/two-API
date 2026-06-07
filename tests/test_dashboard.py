@@ -73,7 +73,7 @@ async def test_homepage_renders_model_colored_hourly_chart_segments():
     assert "position: fixed" in resp.text
     assert "Token Details" in resp.text
     assert "Avg Latency" in resp.text
-    assert "Per Output Token" in resp.text
+    assert "Tokens/s" in resp.text
     assert "Cache Read: ' + fmtMetric(item.cache_read_tokens)" in resp.text
     assert "Cache Write: ' + fmtMetric(item.cache_write_tokens)" in resp.text
     assert "CR ' + fmtMetric(data.cache_read_tokens)" in resp.text
@@ -269,7 +269,7 @@ async def test_homepage_renders_24_hour_grouped_usage_detail():
     assert "Cache Read" in resp.text
     assert "Cache Write" in resp.text
     assert "Average Latency" in resp.text
-    assert "Per Output Token" in resp.text
+    assert "Tokens/s" in resp.text
     assert "hourly-detail-row" in resp.text
     assert "hourly-detail-name" in resp.text
     assert "Object.keys(summary).sort().map(function(name)" in resp.text
@@ -308,9 +308,9 @@ async def test_recent_requests_renders_and_downloads_alias_field():
     assert "<th>Time</th><th>Alias</th><th>Model</th>" in page.text
     assert '<th class="cell-num">Latency</th>' in page.text
     assert '<th class="cell-num">Prompt</th>' in page.text
-    assert '<th class="cell-num">Compl</th>' in page.text
-    assert '<th class="cell-num">CacheR</th>' in page.text
-    assert '<th class="cell-num">CacheW</th>' in page.text
+    assert '<th class="cell-num">Completion</th>' in page.text
+    assert '<th class="cell-num">Cache Read</th>' in page.text
+    assert '<th class="cell-num">Cache Write</th>' in page.text
     assert ".recent-table th.cell-num" in page.text
     assert "default" in page.text
     assert "colspan=\"14\"" in page.text
@@ -374,5 +374,6 @@ async def test_homepage_renders_structured_error_output_preview():
         resp = await client.get("/")
 
     assert resp.status_code == 200
-    assert "backend_status=400" in resp.text
-    assert "backend_error=empty response body" in resp.text
+    # Error data is in the hidden JSON detail section, not in the preview
+    assert 'backend_status' in resp.text and '400' in resp.text
+    assert 'backend_error' in resp.text and 'empty response body' in resp.text

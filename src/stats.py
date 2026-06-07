@@ -186,10 +186,11 @@ class Stats:
                       prompt_tokens: int | None, completion_tokens: int | None,
                       cache_read: int | None, cache_write: int | None,
                       input_messages: list, output_content,
+                      request_body=None,
                       alias: str | None = None):
         with self._lock:
             now = datetime.now(TZ).strftime("%H:%M:%S")
-            self._recent.appendleft({
+            entry = {
                 "time": now,
                 "model": model,
                 "alias": alias if alias is not None else "",
@@ -203,7 +204,10 @@ class Stats:
                 "cache_write": cache_write,
                 "input_messages": _truncate_content(input_messages),
                 "output": _truncate_content(output_content),
-            })
+            }
+            if request_body is not None:
+                entry["request_body"] = _truncate_content(request_body)
+            self._recent.appendleft(entry)
 
     def snapshot(self) -> dict:
         with self._lock:
@@ -231,20 +235,20 @@ class Stats:
                         "aliases": {},
                     })
                     item["avg_latency_ms"] = round(item["total_latency_ms"] / item["requests"], 1) if item["requests"] else 0
-                    item["latency_per_output_token_ms"] = round(item["total_latency_ms"] / item["completion_tokens"], 1) if item["completion_tokens"] else 0
+                    item["latency_per_output_token_ms"] = round(item["completion_tokens"] * 1000 / item["total_latency_ms"], 1) if item["completion_tokens"] and item["total_latency_ms"] else 0
                     item["models"] = {}
                     for model, model_data in self._hourly.get(hour, {}).get("models", {}).items():
                         model_item = dict(model_data)
                         model_item.setdefault("total_latency_ms", 0)
                         model_item["avg_latency_ms"] = round(model_item["total_latency_ms"] / model_item["requests"], 1) if model_item["requests"] else 0
-                        model_item["latency_per_output_token_ms"] = round(model_item["total_latency_ms"] / model_item["completion_tokens"], 1) if model_item["completion_tokens"] else 0
+                        model_item["latency_per_output_token_ms"] = round(model_item["completion_tokens"] * 1000 / model_item["total_latency_ms"], 1) if model_item["completion_tokens"] and model_item["total_latency_ms"] else 0
                         item["models"][model] = model_item
                     item["aliases"] = {}
                     for alias, alias_data in self._hourly.get(hour, {}).get("aliases", {}).items():
                         alias_item = dict(alias_data)
                         alias_item.setdefault("total_latency_ms", 0)
                         alias_item["avg_latency_ms"] = round(alias_item["total_latency_ms"] / alias_item["requests"], 1) if alias_item["requests"] else 0
-                        alias_item["latency_per_output_token_ms"] = round(alias_item["total_latency_ms"] / alias_item["completion_tokens"], 1) if alias_item["completion_tokens"] else 0
+                        alias_item["latency_per_output_token_ms"] = round(alias_item["completion_tokens"] * 1000 / alias_item["total_latency_ms"], 1) if alias_item["completion_tokens"] and alias_item["total_latency_ms"] else 0
                         item["aliases"][alias] = alias_item
                     hourly.append(item)
                     current += timedelta(hours=1)

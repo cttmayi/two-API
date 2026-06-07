@@ -41,6 +41,7 @@ async def messages(request: Request):
         return JSONResponse(status_code=400, content={"error": "Missing 'model' field"})
 
     alias_name, model_name, new_body = _apply_alias(request, body_json)
+    original_body = dict(body_json)
     if new_body:
         body_bytes = new_body
 
@@ -183,6 +184,7 @@ async def messages(request: Request):
                     cache_read=cache_read_tokens, cache_write=cache_write_tokens,
                     input_messages=body_json.get("messages", []),
                     output_content=output_content,
+                    request_body=original_body,
                 )
 
             return StreamingResponse(stream_with_stats(), media_type="text/event-stream")
@@ -235,6 +237,7 @@ async def messages(request: Request):
                 cache_read=cache_read_tokens, cache_write=cache_write_tokens,
                 input_messages=body_json.get("messages", []),
                 output_content=output_content,
+                request_body=original_body,
             )
             return resp
     except httpx.ConnectError:

@@ -79,7 +79,7 @@ async def homepage(request: Request):
     stats_cards = ""
     for name, m in stats.get("models", {}).items():
         avg_lat = m["total_latency_ms"] / m["requests"] if m["requests"] else 0
-        tok_lat = m["total_latency_ms"] / m["completion_tokens"] if m["completion_tokens"] else 0
+        tok_sec = m["completion_tokens"] * 1000 / m["total_latency_ms"] if m["completion_tokens"] and m["total_latency_ms"] else 0
         stats_cards += f"""
         <div class="model-card">
             <div class="model-card-header">
@@ -112,8 +112,8 @@ async def homepage(request: Request):
                     <span class="metric-label">Avg Latency</span>
                 </div>
                 <div class="metric">
-                    <span class="metric-value">{tok_lat:.0f}<span class="metric-unit"> ms/tok</span></span>
-                    <span class="metric-label">Per Output Token</span>
+                    <span class="metric-value">{tok_sec:.0f}<span class="metric-unit"> tok/s</span></span>
+                    <span class="metric-label">Tokens/s</span>
                 </div>
             </div>
         </div>"""
@@ -210,10 +210,10 @@ async def homepage(request: Request):
                         except (json.JSONDecodeError, UnicodeDecodeError):
                             pass
                     parts.append("[tool: " + fn_name + "]" + inp)
-            output_preview = " ".join(parts) or _tool_input_summary(output).strip("()")
+            output_preview = " ".join(parts)
         output_preview = _html.escape(output_preview[:120])
 
-        input_json = _html.escape(json.dumps(r.get("input_messages", []), ensure_ascii=False, indent=2))
+        input_json = _html.escape(json.dumps(r.get("request_body") or r.get("input_messages", []), ensure_ascii=False, indent=2))
         output_json = _html.escape(json.dumps(r.get("output"), ensure_ascii=False, indent=2))
         recent_rows += f"""
         <tr class="recent-row" onclick="toggleDetail('{detail_id}')">
@@ -236,11 +236,11 @@ async def homepage(request: Request):
             <td colspan="14">
                 <div class="detail-grid">
                     <div class="detail-block">
-                        <div class="detail-label">Input Messages</div>
+                        <div class="detail-label">INPUT</div>
                         <pre class="detail-json">{input_json}</pre>
                     </div>
                     <div class="detail-block">
-                        <div class="detail-label">Output</div>
+                        <div class="detail-label">OUTPUT</div>
                         <pre class="detail-json">{output_json}</pre>
                     </div>
                 </div>
@@ -252,7 +252,7 @@ async def homepage(request: Request):
     total_requests = stats["total_requests"]
     model_count = len(config.models)
     if recent_rows:
-        recent_section = '<table class="recent-table"><thead><tr><th>Time</th><th>Alias</th><th>Model</th><th>Provider</th><th>S</th><th>Status</th><th class="cell-num">Latency</th><th class="cell-num">Prompt</th><th class="cell-num">Compl</th><th class="cell-num">CacheR</th><th class="cell-num">CacheW</th><th>Input</th><th>Output</th><th></th></tr></thead><tbody>' + recent_rows + '</tbody></table>'
+        recent_section = '<table class="recent-table"><thead><tr><th>Time</th><th>Alias</th><th>Model</th><th>Provider</th><th>Stream</th><th>Status</th><th class="cell-num">Latency</th><th class="cell-num">Prompt</th><th class="cell-num">Completion</th><th class="cell-num">Cache Read</th><th class="cell-num">Cache Write</th><th>Input</th><th>Output</th><th></th></tr></thead><tbody>' + recent_rows + '</tbody></table>'
     else:
         recent_section = '<div class="empty-state">No requests processed yet</div>'
     hourly_json = json.dumps(stats.get("hourly", []), ensure_ascii=False).replace("</", "<\\/")
@@ -786,7 +786,7 @@ function tooltipHtml(item, metric) {{
             fmtMetric(data[metric]) + ' / total ' + fmtMetric(data.total_tokens) +
             ' (P ' + fmtMetric(data.prompt_tokens) + ', C ' + fmtMetric(data.completion_tokens) +
             ', CR ' + fmtMetric(data.cache_read_tokens) + ', CW ' + fmtMetric(data.cache_write_tokens) +
-            ', Avg ' + fmtDuration(data.avg_latency_ms) + ', Out ' + fmtDuration(data.latency_per_output_token_ms) + '/tok)</div>';
+            ', Avg ' + fmtDuration(data.avg_latency_ms) + ', Out ' + fmtMetric(data.latency_per_output_token_ms) + ' tok/s)</div>';
     }}).join('');
     return '<strong>Token Details by ' + (hourlyGroupBy === "aliases" ? "Alias" : "Model") + '</strong><br>' +
         item.hour + '<br>' +
@@ -795,7 +795,7 @@ function tooltipHtml(item, metric) {{
         'Cache Read: ' + fmtMetric(item.cache_read_tokens) + '<br>' +
         'Cache Write: ' + fmtMetric(item.cache_write_tokens) + '<br>' +
         'Avg Latency: ' + fmtDuration(item.avg_latency_ms) + '<br>' +
-        'Per Output Token: ' + fmtDuration(item.latency_per_output_token_ms) + '/tok<hr style="border:0;border-top:1px solid rgba(255,255,255,0.18);margin:6px 0">' + rows;
+        'Tokens/s: ' + fmtMetric(item.latency_per_output_token_ms) + '<hr style="border:0;border-top:1px solid rgba(255,255,255,0.18);margin:6px 0">' + rows;
 }}
 function showTooltip(event, html) {{
     var tooltip = document.getElementById("hourly-tooltip");
@@ -843,7 +843,7 @@ function renderHourlyDetail() {{
         var data = summary[name];
         var backend = hourlyGroupBy === "aliases" && data.model ? ' → ' + data.model : '';
         var avg = data.requests ? data.total_latency_ms / data.requests : 0;
-        var perOutput = data.completion_tokens ? data.total_latency_ms / data.completion_tokens : 0;
+        var perOutput = data.completion_tokens && data.total_latency_ms ? data.completion_tokens * 1000 / data.total_latency_ms : 0;
         return '<tr class="hourly-detail-row">' +
             '<td class="hourly-detail-name">' + groupLabel(name) + backend + '</td>' +
             '<td class="cell-num">' + fmtMetric(data.total_tokens) + '</td>' +
@@ -853,10 +853,10 @@ function renderHourlyDetail() {{
             '<td class="cell-num">' + fmtMetric(data.cache_read_tokens) + '</td>' +
             '<td class="cell-num">' + fmtMetric(data.cache_write_tokens) + '</td>' +
             '<td class="cell-num">' + fmtDuration(avg) + '</td>' +
-            '<td class="cell-num">' + fmtDuration(perOutput) + '/tok</td>' +
+            '<td class="cell-num">' + fmtMetric(perOutput) + '<span class="metric-unit"> tok/s</span></td>' +
             '</tr>';
     }}).join('');
-    detail.innerHTML = rows ? '<div class="recent-table-wrap hourly-detail-table-wrap"><table class="recent-table hourly-detail-table"><thead><tr><th>' + (hourlyGroupBy === "aliases" ? "Alias" : "Model") + '</th><th class="cell-num">Total</th><th class="cell-num">Requests</th><th class="cell-num">Prompt</th><th class="cell-num">Completion</th><th class="cell-num">Cache Read</th><th class="cell-num">Cache Write</th><th class="cell-num">Average Latency</th><th class="cell-num">Per Output Token</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '<div class="hourly-detail-empty">No grouped usage in this period.</div>';
+    detail.innerHTML = rows ? '<div class="recent-table-wrap hourly-detail-table-wrap"><table class="recent-table hourly-detail-table"><thead><tr><th>' + (hourlyGroupBy === "aliases" ? "Alias" : "Model") + '</th><th class="cell-num">Total</th><th class="cell-num">Requests</th><th class="cell-num">Prompt</th><th class="cell-num">Completion</th><th class="cell-num">Cache Read</th><th class="cell-num">Cache Write</th><th class="cell-num">Average Latency</th><th class="cell-num">Tokens/s</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '<div class="hourly-detail-empty">No grouped usage in this period.</div>';
 }}
 function renderHourlyChart() {{
     var chart = document.getElementById("hourly-chart");
