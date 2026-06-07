@@ -40,12 +40,23 @@ def _chat_role(role: str) -> str:
     return "system" if role == "developer" else role
 
 
-def _flatten_content_blocks(blocks: list) -> str:
-    texts = []
+def _flatten_content_blocks(blocks: list) -> str | list:
+    text_blocks = []
+    plain_texts = []
     for block in blocks:
         if isinstance(block, dict) and block.get("type") == "input_text":
-            texts.append(block.get("text", ""))
-    return "\n".join(texts)
+            text = block.get("text", "")
+            if any(key not in {"type", "text"} for key in block):
+                text_block = {"type": "text", "text": text}
+                for key, value in block.items():
+                    if key not in {"type", "text"}:
+                        text_block[key] = value
+                text_blocks.append(text_block)
+            else:
+                plain_texts.append(text)
+    if text_blocks:
+        return [{"type": "text", "text": text} for text in plain_texts] + text_blocks
+    return "\n".join(plain_texts)
 
 
 def _is_empty_content(content) -> bool:

@@ -35,6 +35,7 @@ def test_responses_request_converts_to_chat_request_through_ir():
         "temperature": 0.7,
         "top_p": 0.9,
         "stream": True,
+        "stream_options": {"include_usage": True},
         "tools": [{
             "type": "function",
             "function": {

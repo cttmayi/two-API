@@ -406,6 +406,80 @@ class TestOpenAIEndpoints:
         }
 
     @pytest.mark.asyncio
+    async def test_responses_to_chat_records_prompt_cache_hit_tokens(self, client, app_with_models):
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=["resp-chat"], openai_base_url="https://api.openai.com", responses_to_chat=True),
+            ],
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            return httpx.Response(200, json={
+                "id": "chatcmpl_123",
+                "created": 1234567890,
+                "model": "resp-chat",
+                "choices": [{"message": {"role": "assistant", "content": "hi"}}],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 2,
+                    "total_tokens": 12,
+                    "prompt_cache_hit_tokens": 8,
+                },
+            })
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/responses", json={"model": "resp-chat", "input": "hello"})
+
+        assert resp.status_code == 200
+        assert resp.json()["usage"]["input_tokens_details"] == {"cached_tokens": 8}
+        recent = get_stats().snapshot()["recent"][0]
+        assert recent["cache_read"] == 8
+        assert recent["output"]["usage"]["input_tokens_details"] == {"cached_tokens": 8}
+        assert recent["output"]["converted_request"]["messages"] == [{"role": "user", "content": "hello"}]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("cache_field", [
+        "cache_read_input_tokens",
+        "cache_creation_input_tokens",
+        "prompt_cache_read_tokens",
+        "prompt_cache_hit_tokens",
+        "cached_tokens",
+    ])
+    async def test_responses_to_chat_records_compatible_cache_token_fields(self, client, app_with_models, cache_field):
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=["resp-chat"], openai_base_url="https://api.openai.com", responses_to_chat=True),
+            ],
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            return httpx.Response(200, json={
+                "id": "chatcmpl_123",
+                "created": 1234567890,
+                "model": "resp-chat",
+                "choices": [{"message": {"role": "assistant", "content": "hi"}}],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 2,
+                    "total_tokens": 12,
+                    cache_field: 8,
+                },
+            })
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/responses", json={"model": "resp-chat", "input": "hello"})
+
+        assert resp.status_code == 200
+        recent = get_stats().snapshot()["recent"][0]
+        assert recent["cache_read"] == 8
+
+    @pytest.mark.asyncio
     async def test_responses_to_chat_converts_chat_tool_calls_to_responses_output(self, client, app_with_models):
         app_with_models.state.config = Config(
             models=[
@@ -444,6 +518,50 @@ class TestOpenAIEndpoints:
             "arguments": "{\"cmd\":\"pwd\"}",
             "status": "completed",
         }
+
+    @pytest.mark.asyncio
+    async def test_responses_to_chat_preserves_input_text_cache_control(self, client, app_with_models):
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=["resp-chat"], openai_base_url="https://api.openai.com", responses_to_chat=True),
+            ],
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            body = json.loads(request.content)
+            assert body["messages"] == [{
+                "role": "user",
+                "content": [{
+                    "type": "text",
+                    "text": "cache this prompt",
+                    "cache_control": {"type": "ephemeral"},
+                }],
+            }]
+            return httpx.Response(200, json={
+                "id": "chatcmpl_123",
+                "created": 1234567890,
+                "model": "resp-chat",
+                "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+            })
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/responses", json={
+            "model": "resp-chat",
+            "input": [{
+                "role": "user",
+                "content": [{
+                    "type": "input_text",
+                    "text": "cache this prompt",
+                    "cache_control": {"type": "ephemeral"},
+                }],
+            }],
+        })
+
+        assert resp.status_code == 200
+        assert resp.json()["output_text"] == "ok"
 
     @pytest.mark.asyncio
     async def test_responses_to_chat_forwards_function_tools(self, client, app_with_models):
@@ -490,6 +608,49 @@ class TestOpenAIEndpoints:
                     "properties": {"city": {"type": "string"}},
                     "required": ["city"],
                 },
+            }],
+        })
+
+        assert resp.status_code == 200
+        assert resp.json()["output_text"] == "hi"
+
+    @pytest.mark.asyncio
+    async def test_responses_to_chat_preserves_function_tool_cache_control(self, client, app_with_models):
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=["resp-chat"], openai_base_url="https://api.openai.com", responses_to_chat=True),
+            ],
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            body = json.loads(request.content)
+            assert body["tools"] == [{
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "parameters": {"type": "object", "properties": {}},
+                    "cache_control": {"type": "ephemeral"},
+                },
+            }]
+            return httpx.Response(200, json={
+                "id": "chatcmpl_123",
+                "created": 1234567890,
+                "model": "resp-chat",
+                "choices": [{"message": {"role": "assistant", "content": "hi"}}],
+            })
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/responses", json={
+            "model": "resp-chat",
+            "input": "hello",
+            "tools": [{
+                "type": "function",
+                "name": "get_weather",
+                "parameters": {"type": "object", "properties": {}},
+                "cache_control": {"type": "ephemeral"},
             }],
         })
 
@@ -603,6 +764,7 @@ class TestOpenAIEndpoints:
             assert request.url.path == "/chat/completions"
             body = json.loads(request.content)
             assert body["stream"] is True
+            assert body["stream_options"] == {"include_usage": True}
             assert body["messages"] == [{"role": "user", "content": "hello"}]
             return httpx.Response(200, content=(
                 'data: {"choices":[{"delta":{"content":"he"}}]}\n\n'
@@ -657,6 +819,34 @@ class TestOpenAIEndpoints:
         assert '"arguments":"{\\"cmd\\":\\"pwd\\"}"' in resp.text
 
     @pytest.mark.asyncio
+    async def test_responses_to_chat_streaming_records_prompt_cache_hit_tokens(self, client, app_with_models):
+        app_with_models.state.config = Config(
+            models=[
+                ModelEntry(names=["resp-chat"], openai_base_url="https://api.openai.com", responses_to_chat=True),
+            ],
+        )
+        app_with_models.state.router = ModelRouter(app_with_models.state.config.models)
+
+        async def backend_handler(request):
+            return httpx.Response(200, content=(
+                'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n'
+                'data: {"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12,"prompt_cache_hit_tokens":8}}\n\n'
+                'data: [DONE]\n\n'
+            ))
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
+        set_forward_client(mock_client)
+
+        resp = await client.post("/responses", json={"model": "resp-chat", "input": "hello", "stream": True})
+
+        assert resp.status_code == 200
+        assert '"input_tokens_details":{"cached_tokens":8}' in resp.text
+        recent = get_stats().snapshot()["recent"][0]
+        assert recent["cache_read"] == 8
+        assert recent["output"]["usage"]["input_tokens_details"] == {"cached_tokens": 8}
+        assert recent["output"]["converted_request"]["messages"] == [{"role": "user", "content": "hello"}]
+
+    @pytest.mark.asyncio
     async def test_responses_to_chat_streaming_uses_zero_usage_when_missing(self, client, app_with_models):
         app_with_models.state.config = Config(
             models=[
@@ -706,7 +896,7 @@ class TestOpenAIEndpoints:
             return httpx.Response(200, content=(
                 'data: {"type":"response.output_text.delta","delta":"he"}\n\n'
                 'data: {"type":"response.output_text.delta","delta":"llo"}\n\n'
-                'data: {"type":"response.completed","response":{"usage":{"input_tokens":4,"output_tokens":2}}}\n\n'
+                'data: {"type":"response.completed","response":{"usage":{"input_tokens":4,"output_tokens":2,"input_tokens_details":{"cached_tokens":3}}}}\n\n'
             ))
 
         mock_client = httpx.AsyncClient(transport=httpx.MockTransport(backend_handler))
@@ -715,6 +905,9 @@ class TestOpenAIEndpoints:
         resp = await client.post("/responses", json={"model": "gpt-4o", "input": "hi", "stream": True})
         assert resp.status_code == 200
         assert "response.output_text.delta" in resp.text
+        recent = get_stats().snapshot()["recent"][0]
+        assert recent["cache_read"] == 3
+        assert recent["output"]["usage"]["input_tokens_details"] == {"cached_tokens": 3}
 
     @pytest.mark.asyncio
     async def test_list_models(self, client):

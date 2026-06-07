@@ -15,9 +15,22 @@ def chat_request_from_ir(request: RequestIR) -> dict:
         body["top_p"] = request.top_p
     if request.stream:
         body["stream"] = True
+        body["stream_options"] = {"include_usage": True}
     if request.tools:
         body["tools"] = [_chat_tool_from_ir(tool) for tool in request.tools]
     return body
+
+
+def _cache_read_tokens_from_usage(usage: dict) -> int | None:
+    return (
+        usage.get("prompt_tokens_details", {}).get("cached_tokens")
+        or usage.get("input_tokens_details", {}).get("cached_tokens")
+        or usage.get("prompt_cache_hit_tokens")
+        or usage.get("prompt_cache_read_tokens")
+        or usage.get("cache_read_input_tokens")
+        or usage.get("cache_creation_input_tokens")
+        or usage.get("cached_tokens")
+    )
 
 
 def chat_response_to_ir(body: dict, model: str | None = None) -> ResponseIR:
@@ -33,7 +46,7 @@ def chat_response_to_ir(body: dict, model: str | None = None) -> ResponseIR:
             input_tokens=usage.get("prompt_tokens"),
             output_tokens=usage.get("completion_tokens"),
             total_tokens=usage.get("total_tokens"),
-            cache_read_tokens=usage.get("prompt_tokens_details", {}).get("cached_tokens"),
+            cache_read_tokens=_cache_read_tokens_from_usage(usage),
         ),
         tool_calls=message.get("tool_calls"),
     )
@@ -65,10 +78,9 @@ def _message_from_ir(message: Message) -> dict:
 def _chat_tool_from_ir(tool: dict) -> dict:
     if tool.get("type") == "function" and "function" not in tool:
         function = {"name": tool.get("name")}
-        if "description" in tool:
-            function["description"] = tool["description"]
-        if "parameters" in tool:
-            function["parameters"] = tool["parameters"]
+        for key, value in tool.items():
+            if key not in {"type", "name"}:
+                function[key] = value
         return {"type": "function", "function": function}
     return tool
 

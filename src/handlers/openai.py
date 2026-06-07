@@ -83,6 +83,18 @@ def _iter_sse_json(sse_lines: list[str]):
             continue
 
 
+def _cache_read_tokens_from_usage(usage: dict) -> int | None:
+    return (
+        usage.get("prompt_tokens_details", {}).get("cached_tokens")
+        or usage.get("input_tokens_details", {}).get("cached_tokens")
+        or usage.get("prompt_cache_hit_tokens")
+        or usage.get("prompt_cache_read_tokens")
+        or usage.get("cache_read_input_tokens")
+        or usage.get("cache_creation_input_tokens")
+        or usage.get("cached_tokens")
+    )
+
+
 def _chat_stream_stats(sse_lines: list[str], status_code: int):
     prompt_tokens = None
     completion_tokens = None
@@ -101,7 +113,7 @@ def _chat_stream_stats(sse_lines: list[str], status_code: int):
             if completion_tokens is None:
                 completion_tokens = usage.get("completion_tokens")
             if cache_read_tokens is None:
-                cache_read_tokens = usage.get("prompt_tokens_details", {}).get("cached_tokens")
+                cache_read_tokens = _cache_read_tokens_from_usage(usage)
         choices = data.get("choices", [])
         if not choices:
             continue
@@ -142,6 +154,7 @@ def _responses_stream_stats(sse_lines: list[str], status_code: int):
     output_tokens = None
     cache_read_tokens = None
     output_text = ""
+    output_content = {"output_text": output_text}
 
     if status_code != 200:
         return None, None, None, "\n".join(sse_lines)
@@ -149,17 +162,19 @@ def _responses_stream_stats(sse_lines: list[str], status_code: int):
     for data in _iter_sse_json(sse_lines):
         if data.get("type") == "response.output_text.delta" and data.get("delta"):
             output_text += data["delta"]
+            output_content["output_text"] = output_text
         response = data.get("response", {})
         usage = data.get("usage") or response.get("usage", {})
         if usage:
+            output_content["usage"] = usage
             if input_tokens is None:
                 input_tokens = usage.get("input_tokens")
             if output_tokens is None:
                 output_tokens = usage.get("output_tokens")
             if cache_read_tokens is None:
-                cache_read_tokens = usage.get("input_tokens_details", {}).get("cached_tokens")
+                cache_read_tokens = _cache_read_tokens_from_usage(usage)
 
-    return input_tokens, output_tokens, cache_read_tokens, {"output_text": output_text}
+    return input_tokens, output_tokens, cache_read_tokens, output_content
 
 
 def _record_openai_request(
@@ -387,6 +402,23 @@ def _responses_to_chat_streaming_response(
                 "converted_request": chat_body,
             }
         latency_ms = int((time.perf_counter() - start) * 1000)
+        usage = {
+            "input_tokens": prompt_tokens or 0,
+            "output_tokens": completion_tokens or 0,
+        }
+        usage["total_tokens"] = usage["input_tokens"] + usage["output_tokens"]
+        if cache_read_tokens:
+            usage["input_tokens_details"] = {"cached_tokens": cache_read_tokens}
+        output = []
+        if text_output_started:
+            yield _sse_event("response.output_text.done", {"type": "response.output_text.done", "item_id": message_id, "output_index": 0, "content_index": 0, "text": output_text})
+            yield _sse_event("response.content_part.done", {"type": "response.content_part.done", "item_id": message_id, "output_index": 0, "content_index": 0, "part": {"type": "output_text", "text": output_text, "annotations": []}})
+            message_item = _responses_message_item(message_id, "completed", output_text)
+            output.append(message_item)
+            yield _sse_event("response.output_item.done", {"type": "response.output_item.done", "output_index": 0, "item": message_item})
+        completed_response = {"id": response_id, "object": "response", "status": "completed", "model": model_name, "output": output, "output_text": output_text, "usage": usage}
+        detail_output = dict(completed_response)
+        detail_output["converted_request"] = chat_body
         _record_openai_request(
             model_name=stats_model_name,
             alias_name=alias_name,
@@ -400,21 +432,9 @@ def _responses_to_chat_streaming_response(
             cache_read_tokens=cache_read_tokens,
             streaming=True,
             input_messages=chat_body.get("messages", []),
-            output_content=output_content,
+            output_content=detail_output if status_code == 200 else output_content,
         )
-        usage = {
-            "input_tokens": prompt_tokens or 0,
-            "output_tokens": completion_tokens or 0,
-        }
-        usage["total_tokens"] = usage["input_tokens"] + usage["output_tokens"]
-        output = []
-        if text_output_started:
-            yield _sse_event("response.output_text.done", {"type": "response.output_text.done", "item_id": message_id, "output_index": 0, "content_index": 0, "text": output_text})
-            yield _sse_event("response.content_part.done", {"type": "response.content_part.done", "item_id": message_id, "output_index": 0, "content_index": 0, "part": {"type": "output_text", "text": output_text, "annotations": []}})
-            message_item = _responses_message_item(message_id, "completed", output_text)
-            output.append(message_item)
-            yield _sse_event("response.output_item.done", {"type": "response.output_item.done", "output_index": 0, "item": message_item})
-        completed_event = responses_stream_event_from_ir(StreamEventIR(type="response_completed", response={"id": response_id, "object": "response", "status": "completed", "model": model_name, "output": output, "output_text": output_text, "usage": usage}))
+        completed_event = responses_stream_event_from_ir(StreamEventIR(type="response_completed", response=completed_response))
         if completed_event:
             yield _sse_event(*completed_event)
 
@@ -456,7 +476,7 @@ async def chat_completions(request: Request):
             usage = resp_body.get("usage", {})
             prompt_tokens = usage.get("prompt_tokens")
             completion_tokens = usage.get("completion_tokens")
-            cache_read_tokens = usage.get("prompt_tokens_details", {}).get("cached_tokens")
+            cache_read_tokens = _cache_read_tokens_from_usage(usage)
             output_content = resp_body.get("choices", [{}])[0].get("message")
         except (json.JSONDecodeError, UnicodeDecodeError):
             pass
@@ -534,7 +554,8 @@ async def responses(request: Request):
                     input_tokens = usage.get("input_tokens")
                     output_tokens = usage.get("output_tokens")
                     cache_read_tokens = usage.get("input_tokens_details", {}).get("cached_tokens")
-                    output_content = converted_body.get("output_text")
+                    output_content = dict(converted_body)
+                    output_content["converted_request"] = chat_body
                     resp = JSONResponse(status_code=200, content=converted_body)
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     output_content = resp.body.decode("utf-8", errors="replace")
@@ -590,8 +611,8 @@ async def responses(request: Request):
             usage = resp_body.get("usage", {})
             input_tokens = usage.get("input_tokens")
             output_tokens = usage.get("output_tokens")
-            cache_read_tokens = usage.get("input_tokens_details", {}).get("cached_tokens")
-            output_content = resp_body.get("output_text") or resp_body.get("output")
+            cache_read_tokens = _cache_read_tokens_from_usage(usage)
+            output_content = resp_body
         except (json.JSONDecodeError, UnicodeDecodeError):
             pass
 
