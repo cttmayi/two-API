@@ -42,6 +42,14 @@ alias:
   default: gpt-4o-mini
   pro: gpt-4o
 
+# 响应缓存: 相同请求返回缓存结果, 降低延迟和 API 费用（可选）
+cache:
+  enabled: false
+  ttl_seconds: 3600    # 过期时间（秒）, 0 = 永不过期
+  max_entries: 2000    # 最大条目, 超过后 LRU 淘汰
+  aliases: []          # 仅缓存这些 alias（空 = 全部允许）
+  key_fields: []       # 额外参与 cache key 的字段
+
 logging:
   level: INFO
   output: file

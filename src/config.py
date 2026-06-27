@@ -45,7 +45,7 @@ class ModelEntry(BaseModel):
 
 
 class CacheConfigModel(BaseModel):
-    enabled: bool = True
+    enabled: bool = False
     ttl_seconds: int = 3600
     max_entries: int = 2000
     aliases: list[str] = []

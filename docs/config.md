@@ -252,7 +252,40 @@ logging:
 ~/.two-api/usage.json
 ```
 
-Web 首页的 `Hourly Token Usage` 会从该文件加载重启前的小时用量，并最多展示最近 24 个小时；图表可按模型或全局 alias 分组，无请求的小时会保留为空柱。
+## `cache`
+
+| 字段 | 必填 | 默认值 | 说明 |
+|---|---|---|---|
+| `enabled` | 否 | `false` | 总开关 |
+| `ttl_seconds` | 否 | `3600` | 缓存过期时间（秒），`0` 表示永不过期 |
+| `max_entries` | 否 | `2000` | 最大缓存条目数，超过后 LRU 淘汰 |
+| `aliases` | 否 | `[]` | 允许缓存的 alias 列表。空列表 = 放行所有 alias |
+| `key_fields` | 否 | `[]` | 额外参与 cache key 的请求 body 字段。`messages` 始终参与。当 `alias` 在列表中时，只有带 alias 的请求才缓存 |
+
+示例：
+
+```yaml
+cache:
+  enabled: true
+  ttl_seconds: 3600
+  max_entries: 2000
+  aliases:
+    - default
+  key_fields:
+    - model
+    - alias
+```
+
+### 缓存机制
+
+对相同请求（由 `messages` + `key_fields` 配置的字段共同决定）直接返回缓存结果，降低延迟和 API 费用。
+
+- 缓存命中时跳过后端转发，直接返回缓存内容（非流式/流式回放）
+- 命中率在 dashboard 顶部显示（Cache Hits / Cache Misses）
+- 默认使用内存 LRU + TTL 淘汰策略
+- 错误响应（非 200）不会被缓存
+
+流式和非流式请求均支持缓存。流式请求缓存的是 SSE event 列表，命中时按原始顺序回放。
 
 ## 常见配置
 
@@ -307,6 +340,81 @@ models:
     openai_base_url: https://ark.cn-beijing.volces.com/api/v3
     api_key: ark-your-key
 ```
+
+## 测试方法
+
+### OpenAI 兼容端点
+
+**Chat Completions (非流式):**
+
+```bash
+curl http://0.0.0.0:8080/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Hello, who are you?"}]}'
+```
+
+**Chat Completions (流式):**
+
+```bash
+curl http://0.0.0.0:8080/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Tell me a story"}], "stream": true}'
+```
+
+**Responses API:**
+
+```bash
+curl http://0.0.0.0:8080/responses \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-4o", "input": "Hello, who are you?"}'
+```
+
+**模型列表:**
+
+```bash
+curl http://0.0.0.0:8080/models
+```
+
+**Embeddings:**
+
+```bash
+curl http://0.0.0.0:8080/embeddings \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-4o", "input": "Hello world"}'
+```
+
+### Anthropic 兼容端点
+
+支持 `/messages` 和 `/v1/messages`（兼容 Claude Code 等默认带 `/v1` 前缀的客户端）。
+
+**Messages (非流式):**
+
+```bash
+curl http://0.0.0.0:8080/messages \
+  -H "Content-Type: application/json" \
+  -d '{"model": "claude-sonnet-4-6", "max_tokens": 100, "messages": [{"role": "user", "content": "Hello, who are you?"}]}'
+```
+
+**Messages (流式):**
+
+```bash
+curl http://0.0.0.0:8080/messages \
+  -H "Content-Type: application/json" \
+  -d '{"model": "claude-sonnet-4-6", "max_tokens": 100, "messages": [{"role": "user", "content": "Tell me a story"}], "stream": true}'
+```
+
+### Dashboard
+
+访问 `/` 可查看 HTML 状态面板，展示：
+
+- **概览卡片**：运行时间、总请求数、模型组数、缓存命中/未命中
+- **模型配置表**：名称、后端、API Key 状态
+- **Hourly Token Usage**：最近 24 个小时的 token 柱状图，可按模型或全局 alias 分组堆叠显示；无请求的小时会保留为空柱；悬停可查看请求数、总 token、平均延迟、每输出 token 延迟以及当前分组明细
+- **最近请求**（最近 50 条）：时间、alias、模型、提供商、流式标记、状态码、延迟、输入/输出 token、缓存读写、输入/输出预览
+  - 点击行展开详情，查看完整请求/响应内容和 token 用量
+  - 每行单独下载按钮，保存该次请求为 JSON 文件
+
+流式和非流式请求均记录统计。OpenAI 端点的缓存命中从 `usage.prompt_tokens_details.cached_tokens` 提取，Anthropic 端点的缓存命中/写入从 `usage.cache_read_input_tokens` / `usage.cache_creation_input_tokens` 提取。小时用量会持久化到 `~/.two-api/usage.json`，重启后继续加载；Web 页面最多展示最近 24 个小时。
 
 ## 配置检查
 
