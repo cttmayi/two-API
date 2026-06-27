@@ -44,11 +44,20 @@ class ModelEntry(BaseModel):
         return list(self.get_name_map().keys())
 
 
+class CacheConfigModel(BaseModel):
+    enabled: bool = True
+    ttl_seconds: int = 3600
+    max_entries: int = 2000
+    aliases: list[str] = []
+    key_fields: list[str] = []
+
+
 class Config(BaseModel):
     server: ServerConfig = ServerConfig()
     models: list[ModelEntry]
     alias: dict[str, str] = {}
     logging: LoggingConfig = LoggingConfig()
+    cache: CacheConfigModel = CacheConfigModel()
 
 
 def load_config(path: str) -> Config:

@@ -1183,7 +1183,12 @@ body {
     color: #1a1a2e;
     margin-right: 1rem;
 }
-.section { margin-bottom: 2rem; }
+.section {
+    margin-bottom: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #e8ecf0;
+}
+.section:first-of-type { border-top: none; padding-top: 0; }
 .section-title {
     font-size: 1.05rem;
     font-weight: 600;
@@ -1205,7 +1210,7 @@ body {
 .form-row {
     display: flex;
     gap: 1rem;
-    align-items: flex-end;
+    align-items: flex-start;
 }
 .form-row .form-group { flex: 1; }
 .form-group label {
@@ -1240,25 +1245,14 @@ body {
 }
 .toggle-row label { margin-bottom: 0; }
 .model-entry {
-    border: 1px solid #eef0f5;
+    border: 1px solid #e8ecf0;
     border-radius: 8px;
     padding: 1rem 1.25rem;
     margin-bottom: 0.75rem;
     position: relative;
+    background: #fafbfc;
 }
-.model-entry .remove-btn {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.75rem;
-    background: none;
-    border: none;
-    color: #c44;
-    cursor: pointer;
-    font-size: 1.1rem;
-    padding: 4px 8px;
-    border-radius: 4px;
-}
-.model-entry .remove-btn:hover { background: #fff0f0; }
+.model-entry:hover { border-color: #d0d5db; }
 .add-btn {
     padding: 8px 16px;
     border: 1px dashed #ccc;
@@ -1306,13 +1300,60 @@ body {
     opacity: 0.6;
 }
 .tag-remove:hover { opacity: 1; }
+.name-row {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    margin-bottom: 0.4rem;
+}
+.name-row input, .name-row select { flex: 1; min-width: 0; }
+.name-row .remove-btn {
+    background: none;
+    border: none;
+    color: #c44;
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 4px;
+    line-height: 1;
+    border-radius: 3px;
+}
+.name-row .remove-btn:hover { background: #fee8e8; }
+.cache-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.4rem;
+}
+.cache-row .cache-value-wrap { flex: 1; min-width: 0; }
+.cache-row .cache-value-wrap select { width: 100%; }
+.cache-row .remove-btn {
+    background: none;
+    border: none;
+    color: #c44;
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 4px;
+    line-height: 1;
+    border-radius: 3px;
+}
+.cache-row .remove-btn:hover { background: #fee8e8; }
+.add-name-btn {
+    padding: 3px 10px;
+    border: 1px dashed #ccc;
+    border-radius: 4px;
+    background: transparent;
+    color: #666;
+    cursor: pointer;
+    font-size: 0.75rem;
+    margin-top: 0.25rem;
+}
+.add-name-btn:hover { border-color: #2563eb; color: #2563eb; }
 .alias-row {
     display: flex;
     gap: 0.5rem;
     align-items: center;
     margin-bottom: 0.5rem;
 }
-.alias-row input { flex: 1; }
 .alias-row .remove-btn {
     background: none;
     border: none;
@@ -1361,6 +1402,28 @@ body {
     margin-bottom: 0.5rem;
     line-height: 1.4;
 }
+.model-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr auto;
+    gap: 0.75rem 1rem;
+    margin-top: 0.5rem;
+}
+.model-grid .form-group { margin-bottom: 0; }
+.model-grid > div + div {
+    padding-left: 1rem;
+    border-left: 1px solid #e8ecf0;
+}
+.model-remove-btn {
+    background: none;
+    border: 1px solid transparent;
+    color: #c44;
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 6px 12px;
+    white-space: nowrap;
+    border-radius: 4px;
+}
+.model-remove-btn:hover { background: #fff0f0; border-color: #ecc; }
 </style>
 </head>
 <body>
@@ -1408,7 +1471,7 @@ body {
         <div class="help-text">Global model name aliases. The <code>model</code> field in requests is looked up here first before routing. Useful for switching models without changing client config.</div>
         <div class="form-card">
             <div id="alias-entries"></div>
-            <button type="button" class="add-btn" onclick="addAliasEntry()">+ Add Alias</button>
+            <button type="button" class="add-btn" onclick="addAliasEntry();refreshCacheAliasOptions()">+ Add Alias</button>
         </div>
     </div>
 
@@ -1465,12 +1528,14 @@ body {
             <div class="form-row">
                 <div class="form-group">
                     <label>Aliases</label>
-                    <div class="tag-list" id="cache-aliases"></div>
+                    <div id="cache-aliases-container"></div>
+                    <button type="button" class="add-name-btn" onclick="addCacheRow('cache-aliases-container', '')">+ Add</button>
                     <div class="help-text">Only cache these aliases. Empty = allow all.</div>
                 </div>
                 <div class="form-group">
                     <label>Key Fields</label>
-                    <div class="tag-list" id="cache-key-fields"></div>
+                    <div id="cache-key-fields-container"></div>
+                    <button type="button" class="add-name-btn" onclick="addCacheRow('cache-key-fields-container', '')">+ Add</button>
                     <div class="help-text">Extra cache key fields. <code>messages</code> is always included.</div>
                 </div>
             </div>
@@ -1492,112 +1557,210 @@ function showToast(msg, type) {
     setTimeout(function() { t.style.display = 'none'; }, 3000);
 }
 
-function addTag(parentId, value) {
-    var container = document.getElementById(parentId);
-    var tag = document.createElement('span');
-    tag.className = 'tag';
-    tag.innerHTML = value + ' <span class="tag-remove" onclick="this.parentElement.remove()">&#10005;</span>';
-    container.insertBefore(tag, container.lastElement);
+var KEY_FIELD_OPTIONS = ['model', 'alias', 'max_tokens', 'temperature', 'stream', 'provider'];
+
+function getAliasKeyOptions() {
+    var keys = [];
+    document.querySelectorAll('#alias-entries .alias-key').forEach(function(inp) {
+        var v = inp.value.trim();
+        if (v && keys.indexOf(v) === -1) keys.push(v);
+    });
+    return keys;
 }
 
-function setupTagInput(containerId, existingValues) {
+function refreshCacheAliasOptions() {
+    var allOptions = getAliasKeyOptions();
+    var selects = document.querySelectorAll('#cache-aliases-container .cache-value');
+    selects.forEach(function(sel) {
+        var current = sel.value;
+        var taken = [];
+        selects.forEach(function(other) { if (other !== sel && other.value) taken.push(other.value); });
+        sel.innerHTML = '<option value=""></option>';
+        allOptions.forEach(function(o) {
+            if (taken.indexOf(o) === -1) {
+                sel.innerHTML += '<option value="' + o + '">' + o + '</option>';
+            }
+        });
+        sel.value = (current && taken.indexOf(current) === -1) ? current : '';
+    });
+}
+
+function addCacheRow(containerId, value) {
+    value = value || '';
     var container = document.getElementById(containerId);
-    container.innerHTML = '';
-    (existingValues || []).forEach(function(v) { addTag(containerId, v); });
-    var input = document.createElement('input');
-    input.type = 'text';
-    input.placeholder = 'Add...';
-    input.onkeydown = function(e) {
-        if (e.key === 'Enter' || e.key === ',') {
-            e.preventDefault();
-            var val = this.value.trim();
-            if (val) { addTag(containerId, val); }
-            this.value = '';
+    var row = document.createElement('div');
+    row.className = 'cache-row';
+    if (containerId === 'cache-aliases-container') {
+        var allOptions = getAliasKeyOptions();
+        var taken = [];
+        document.querySelectorAll('#cache-aliases-container .cache-value').forEach(function(sel) {
+            if (sel.value) taken.push(sel.value);
+        });
+        var options = allOptions.filter(function(o) { return taken.indexOf(o) === -1; });
+        var html = '<div class="cache-value-wrap"><select class="cache-value">';
+        html += '<option value=""></option>';
+        options.forEach(function(o) {
+            html += '<option value="' + o + '"' + (o === value ? ' selected' : '') + '>' + o + '</option>';
+        });
+        if (value && options.indexOf(value) === -1 && taken.indexOf(value) === -1) {
+            html += '<option value="' + value + '" selected>' + value + '</option>';
         }
-    };
-    container.appendChild(input);
+        html += '</select></div>';
+        row.innerHTML = html + '<button type="button" class="remove-btn" onclick="this.parentElement.remove();refreshCacheAliasOptions()">&#10005;</button>';
+    } else if (containerId === 'cache-key-fields-container') {
+        var taken = [];
+        document.querySelectorAll('#cache-key-fields-container .cache-value').forEach(function(sel) {
+            if (sel.value) taken.push(sel.value);
+        });
+        var options = KEY_FIELD_OPTIONS.filter(function(o) { return taken.indexOf(o) === -1; });
+        var html = '<div class="cache-value-wrap"><select class="cache-value">';
+        html += '<option value=""></option>';
+        options.forEach(function(o) {
+            html += '<option value="' + o + '"' + (o === value ? ' selected' : '') + '>' + o + '</option>';
+        });
+        if (value && options.indexOf(value) === -1 && taken.indexOf(value) === -1) {
+            html += '<option value="' + value + '" selected>' + value + '</option>';
+        }
+        html += '</select></div>';
+        row.innerHTML = html + '<button type="button" class="remove-btn" onclick="this.parentElement.remove()">&#10005;</button>';
+    } else {
+        row.innerHTML = '<input type="text" class="cache-value" value="' + value + '" placeholder="Value">' +
+            '<button type="button" class="remove-btn" onclick="this.parentElement.remove()">&#10005;</button>';
+    }
+    container.appendChild(row);
 }
 
-function getTagValues(containerId) {
-    var tags = document.querySelectorAll('#' + containerId + ' .tag');
-    return Array.from(tags).map(function(t) {
-        return t.textContent.replace('×', '').trim();
-    }).filter(Boolean);
+function collectCacheValues(containerId) {
+    var vals = [];
+    document.querySelectorAll('#' + containerId + ' .cache-value').forEach(function(inp) {
+        var v = inp.value.trim();
+        if (v) vals.push(v);
+    });
+    return vals;
 }
 
-var modelIndex = 0;
 
 function addModelEntry(data) {
     data = data || {};
     var div = document.createElement('div');
     div.className = 'model-entry';
-    var names = (data.names || []).map(function(n) {
-        if (typeof n === 'object') {
-            var k = Object.keys(n)[0];
-            return k + ':' + n[k];
-        }
-        return n;
-    }).join(', ');
-    div.innerHTML = '<button type="button" class="remove-btn" onclick="this.parentElement.remove()">&#10005;</button>' +
-        '<div class="form-row">' +
-            '<div class="form-group" style="flex:2">' +
-                '<label>Names (comma-separated, key:value for alias mapping)</label>' +
-                '<input type="text" class="model-names" value="' + names + '">' +
+    div.innerHTML = '<div class="model-grid">' +
+            '<div class="form-group">' +
+                '<label>Names</label>' +
+                '<div class="names-container"></div>' +
+                '<button type="button" class="add-name-btn" onclick="addNameRow(this, \\'\\', \\'\\');refreshAliasTargets()">+ Add Name</button>' +
+                '<div class="help-text" style="margin-bottom:0">Client-facing name and optional backend name (for alias mapping).</div>' +
             '</div>' +
-        '</div>' +
-        '<div class="form-row">' +
-            '<div class="form-group"><label>OpenAI Base URL</label><input type="text" class="model-openai" value="' + (data.openai_base_url || '') + '"></div>' +
-            '<div class="form-group"><label>Anthropic Base URL</label><input type="text" class="model-anthropic" value="' + (data.anthropic_base_url || '') + '"></div>' +
-        '</div>' +
-        '<div class="form-row">' +
-            '<div class="form-group"><label>API Key</label><input type="text" class="model-key" value="' + (data.api_key || '') + '"></div>' +
-            '<div class="form-group" style="flex:0.5"><label>Max Tokens</label><input type="number" class="model-max-tokens" value="' + (data.max_tokens || '') + '" min="1"><div class="help-text" style="margin-bottom:0">Default when client omits it</div></div>' +
-            '<div class="form-group toggle-row" style="flex:0.5;align-self:flex-end;padding-bottom:4px">' +
-                '<input type="checkbox" class="model-r2c" ' + (data.responses_to_chat ? 'checked' : '') + '>' +
-                '<label style="text-transform:none">R→C <span style="font-weight:400;color:#999;font-size:0.72rem;text-transform:none">Responses→Chat</span></label>' +
+            '<div class="form-group">' +
+                '<label>OpenAI Base URL</label><input type="text" class="model-openai" value="' + (data.openai_base_url || '') + '">' +
+                '<label style="margin-top:0.75rem">Anthropic Base URL</label><input type="text" class="model-anthropic" value="' + (data.anthropic_base_url || '') + '">' +
+            '</div>' +
+            '<div class="form-group">' +
+                '<label>API Key</label><input type="text" class="model-key" value="' + (data.api_key || '') + '">' +
+                '<label style="margin-top:0.75rem">Max Tokens</label><input type="number" class="model-max-tokens" value="' + (data.max_tokens || '') + '" min="1"><div class="help-text" style="margin-bottom:0">Default when client omits it</div>' +
+                '<div class="toggle-row" style="margin-top:0.5rem">' +
+                    '<input type="checkbox" class="model-r2c" ' + (data.responses_to_chat ? 'checked' : '') + '>' +
+                    '<label style="text-transform:none">R→C <span style="font-weight:400;color:#999;font-size:0.72rem;text-transform:none">Responses→Chat</span></label>' +
+                '</div>' +
+            '</div>' +
+            '<div class="form-group" style="display:flex;align-items:flex-end;justify-content:flex-end">' +
+                '<button type="button" class="model-remove-btn" onclick="this.closest(\\'.model-entry\\').remove();refreshAliasTargets()" title="Delete model">✕</button>' +
             '</div>' +
         '</div>';
+    // Populate names rows
+    var container = div.querySelector('.names-container');
+    (data.names || []).forEach(function(n) {
+        if (typeof n === 'object') {
+            var k = Object.keys(n)[0];
+            addNameRow(container, k, n[k]);
+        } else {
+            addNameRow(container, n, '');
+        }
+    });
+    if (!data.names || !data.names.length) {
+        addNameRow(container, '', '');
+    }
     document.getElementById('model-entries').appendChild(div);
+    refreshAliasTargets();
 }
 
 function collectModels() {
     var entries = document.querySelectorAll('.model-entry');
     return Array.from(entries).map(function(e) {
-        var namesRaw = e.querySelector('.model-names').value;
         var names = [];
-        namesRaw.split(',').forEach(function(s) {
-            s = s.trim();
-            if (!s) return;
-            if (s.indexOf(':') > -1) {
-                var parts = s.split(':');
+        e.querySelectorAll('.name-row').forEach(function(row) {
+            var client = row.querySelector('.name-client').value.trim();
+            var backend = row.querySelector('.name-backend').value.trim();
+            if (!client) return;
+            if (backend) {
                 var obj = {};
-                obj[parts[0].trim()] = parts.slice(1).join(':').trim();
+                obj[client] = backend;
                 names.push(obj);
             } else {
-                names.push(s);
+                names.push(client);
             }
         });
-        var key = e.querySelector('.model-key').value;
-        var maxT = e.querySelector('.model-max-tokens').value;
         return {
             names: names,
             openai_base_url: e.querySelector('.model-openai').value || null,
             anthropic_base_url: e.querySelector('.model-anthropic').value || null,
-            api_key: key || null,
-            max_tokens: maxT ? parseInt(maxT) : null,
+            api_key: e.querySelector('.model-key').value || null,
+            max_tokens: parseInt(e.querySelector('.model-max-tokens').value) || null,
             responses_to_chat: e.querySelector('.model-r2c').checked,
         };
+    });
+}
+function addNameRow(containerOrBtn, clientName, backendName) {
+    clientName = clientName || '';
+    backendName = backendName || '';
+    var container = containerOrBtn.classList.contains('add-name-btn') ? containerOrBtn.previousElementSibling : containerOrBtn;
+    var row = document.createElement('div');
+    row.className = 'name-row';
+    row.innerHTML = '<input type="text" class="name-client" placeholder="Name" value="' + clientName + '" oninput="refreshAliasTargets()">' +
+        '<input type="text" class="name-backend" placeholder="Backend (optional)" value="' + backendName + '">' +
+        '<button type="button" class="remove-btn" onclick="this.parentElement.remove();refreshAliasTargets()">X</button>';
+    container.appendChild(row);
+}
+function getModelNameOptions() {
+    var names = [];
+    document.querySelectorAll('.name-client').forEach(function(input) {
+        var val = input.value.trim();
+        if (val && names.indexOf(val) === -1) names.push(val);
+    });
+    return names;
+}
+
+function refreshAliasTargets() {
+    var options = getModelNameOptions();
+    document.querySelectorAll('.alias-value').forEach(function(sel) {
+        var current = sel.value;
+        sel.innerHTML = '<option value=""></option>';
+        options.forEach(function(n) {
+            sel.innerHTML += '<option value="' + n + '">' + n + '</option>';
+        });
+        if (current && options.indexOf(current) > -1) sel.value = current;
     });
 }
 
 function addAliasEntry(key, value) {
     key = key || '';
     value = value || '';
+    var showLabels = document.getElementById('alias-entries').children.length === 0;
     var div = document.createElement('div');
     div.className = 'alias-row';
-    div.innerHTML = '<input type="text" class="alias-key" placeholder="Alias name" value="' + key + '">' +
-        '<input type="text" class="alias-value" placeholder="Target model" value="' + value + '">' +
-        '<button type="button" class="remove-btn" onclick="this.parentElement.remove()">&#10005;</button>';
+    var options = getModelNameOptions();
+    var selectHtml = '<option value=""></option>';
+    options.forEach(function(n) {
+        selectHtml += '<option value="' + n + '"' + (n === value ? ' selected' : '') + '>' + n + '</option>';
+    });
+    if (value && options.indexOf(value) === -1) {
+        selectHtml += '<option value="' + value + '" selected>' + value + '</option>';
+    }
+    div.innerHTML = (showLabels ? '<div class="form-group" style="margin-bottom:0;flex:1"><label>Alias</label><input type="text" class="alias-key" value="' + key + '" oninput="refreshCacheAliasOptions()"></div>' +
+        '<div class="form-group" style="margin-bottom:0;flex:1"><label>Target Model</label><select class="alias-value">' + selectHtml + '</select></div>' :
+        '<div class="form-group" style="margin-bottom:0;flex:1"><input type="text" class="alias-key" value="' + key + '" placeholder="Alias" oninput="refreshCacheAliasOptions()"></div>' +
+        '<div class="form-group" style="margin-bottom:0;flex:1"><select class="alias-value">' + selectHtml + '</select></div>') +
+        '<button type="button" class="remove-btn" onclick="this.parentElement.remove();refreshCacheAliasOptions()">&#10005;</button>';
     document.getElementById('alias-entries').appendChild(div);
 }
 
@@ -1632,13 +1795,42 @@ function loadConfig() {
             document.getElementById('cache-enabled').checked = data.cache.enabled;
             document.getElementById('cache-ttl').value = data.cache.ttl_seconds;
             document.getElementById('cache-max-entries').value = data.cache.max_entries;
-            setupTagInput('cache-aliases', data.cache.aliases);
-            setupTagInput('cache-key-fields', data.cache.key_fields);
+            document.getElementById('cache-aliases-container').innerHTML = '';
+            (data.cache.aliases || []).forEach(function(v) { addCacheRow('cache-aliases-container', v); });
+            document.getElementById('cache-key-fields-container').innerHTML = '';
+            (data.cache.key_fields || []).forEach(function(v) { addCacheRow('cache-key-fields-container', v); });
         })
         .catch(function() { showToast('Failed to load config', 'error'); });
 }
 
 function saveConfig() {
+    // Validate no duplicate alias keys
+    var aliasKeys = [];
+    var dupAlias = false;
+    document.querySelectorAll('#alias-entries .alias-key').forEach(function(inp) {
+        var v = inp.value.trim();
+        if (v) {
+            if (aliasKeys.indexOf(v) !== -1) { dupAlias = 'Duplicate alias key: ' + v; }
+            aliasKeys.push(v);
+        }
+    });
+    if (dupAlias) { showToast(dupAlias, 'error'); return; }
+
+    // Validate no duplicate names within each model entry
+    var dupName = false;
+    document.querySelectorAll('.model-entry').forEach(function(entry) {
+        if (dupName) return;
+        var names = [];
+        entry.querySelectorAll('.name-client').forEach(function(inp) {
+            var v = inp.value.trim();
+            if (v) {
+                if (names.indexOf(v) !== -1) { dupName = 'Duplicate name "' + v + '" in a model entry'; }
+                names.push(v);
+            }
+        });
+    });
+    if (dupName) { showToast(dupName, 'error'); return; }
+
     var data = {
         server: {
             host: document.getElementById('server-host').value,
@@ -1655,8 +1847,8 @@ function saveConfig() {
             enabled: document.getElementById('cache-enabled').checked,
             ttl_seconds: parseInt(document.getElementById('cache-ttl').value) || 3600,
             max_entries: parseInt(document.getElementById('cache-max-entries').value) || 2000,
-            aliases: getTagValues('cache-aliases'),
-            key_fields: getTagValues('cache-key-fields'),
+            aliases: collectCacheValues('cache-aliases-container'),
+            key_fields: collectCacheValues('cache-key-fields-container'),
         },
     };
 

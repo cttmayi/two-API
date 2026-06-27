@@ -9,6 +9,7 @@ from src.forwarder import (
 )
 from src.logging_setup import get_logger
 from src.stats import get_stats
+from src.cache import _should_cache, _build_cache_key, get_cache, CacheEntry, stream_from_cache
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -68,6 +69,23 @@ async def messages(request: Request):
     start = time.perf_counter()
     streaming = body_json.get("stream", False)
 
+    # Cache check
+    cache_config = request.app.state.config.cache
+    cache_key = None
+    cached_entry = None
+    cache_enabled = _should_cache(cache_config, alias_name, list(cache_config.key_fields))
+    if cache_enabled:
+        cache_key = _build_cache_key(alias_name, body_json, list(cache_config.key_fields), request.url.path)
+        cached_entry = get_cache().get(cache_key)
+    if cached_entry:
+        if streaming and cached_entry.sse_lines:
+            return StreamingResponse(stream_from_cache(cached_entry), media_type="text/event-stream")
+        elif not streaming and cached_entry.response_body:
+            try:
+                return JSONResponse(content=json.loads(cached_entry.response_body), status_code=200)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                pass
+
     try:
         if streaming:
             backend_url = entry.anthropic_base_url
@@ -92,10 +110,11 @@ async def messages(request: Request):
                         while "\n" in partial:
                             line, partial = partial.split("\n", 1)
                             line = line.rstrip("\r")
-                            if line:
-                                sse_lines.append(line)
+                            sse_lines.append(line)
 
                 latency_ms = int((time.perf_counter() - start) * 1000)
+                if cache_key and status_code == 200:
+                    get_cache().set(cache_key, CacheEntry(sse_lines=sse_lines, created_at=time.time()))
                 input_tokens = None
                 output_tokens = None
                 cache_read_tokens = None
@@ -173,12 +192,12 @@ async def messages(request: Request):
                     cache_read_tokens=cache_read_tokens,
                     cache_write_tokens=cache_write_tokens,
                 )
-                get_stats().record(backend_model, "anthropic", input_tokens, output_tokens,
+                get_stats().record(model_name, "anthropic", input_tokens, output_tokens,
                                    latency_ms, cache_read_tokens=cache_read_tokens,
                                    cache_write_tokens=cache_write_tokens,
                                    alias=alias_name)
                 get_stats().record_detail(
-                    model=backend_model, alias=alias_name, provider="anthropic", path=request.url.path, streaming=True,
+                    model=model_name, alias=alias_name, provider="anthropic", path=request.url.path, streaming=True,
                     latency_ms=latency_ms, status=status_code,
                     prompt_tokens=input_tokens, completion_tokens=output_tokens,
                     cache_read=cache_read_tokens, cache_write=cache_write_tokens,
@@ -190,6 +209,8 @@ async def messages(request: Request):
             return StreamingResponse(stream_with_stats(), media_type="text/event-stream")
         else:
             resp = await forward_non_stream(request, entry.anthropic_base_url, entry.api_key, body=body_bytes, )
+            if cache_key and resp.status_code == 200:
+                get_cache().set(cache_key, CacheEntry(response_body=resp.body, created_at=time.time()))
             latency_ms = int((time.perf_counter() - start) * 1000)
 
             input_tokens = None
@@ -226,12 +247,12 @@ async def messages(request: Request):
                 cache_read_tokens=cache_read_tokens,
                 cache_write_tokens=cache_write_tokens,
             )
-            get_stats().record(backend_model, "anthropic", input_tokens, output_tokens, latency_ms,
+            get_stats().record(model_name, "anthropic", input_tokens, output_tokens, latency_ms,
                                cache_read_tokens=cache_read_tokens,
                                cache_write_tokens=cache_write_tokens,
                                alias=alias_name)
             get_stats().record_detail(
-                model=backend_model, alias=alias_name, provider="anthropic", path=request.url.path, streaming=False,
+                model=model_name, alias=alias_name, provider="anthropic", path=request.url.path, streaming=False,
                 latency_ms=latency_ms, status=resp.status_code,
                 prompt_tokens=input_tokens, completion_tokens=output_tokens,
                 cache_read=cache_read_tokens, cache_write=cache_write_tokens,

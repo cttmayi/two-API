@@ -48,6 +48,17 @@ models:
     default: gpt-4o-mini
     pro: gpt-4o
 
+  # 响应缓存（可选，默认启用）
+  cache:
+    enabled: true
+    ttl_seconds: 3600
+    max_entries: 2000
+    aliases:
+      - default
+    key_fields:
+      - model
+      - alias
+
 logging:
   level: INFO
   output: file
@@ -62,6 +73,21 @@ logging:
 - `api_key`: 可选，配置后将作为 `Authorization: Bearer <key>` 注入到后端请求
 - `max_tokens`: 可选，客户端请求未传 `max_tokens` 时代理自动注入此值。不配置则不注入，不影响远端有传的情况
 - `responses_to_chat`: 可选，设为 `true` 后客户端调用 Responses API 时会转成后端 Chat Completions 请求，再把 Chat 输出转换回 Responses 格式；会将 `developer` role、`input_text` 内容块和 function `tools` 转为 Chat 兼容格式，过滤空白消息，并把 Chat tool calls 转回 Responses function calls
+- `cache`: 响应缓存（可选），对相同请求直接返回缓存结果
+  - `enabled`: 总开关，默认 `true`
+  - `ttl_seconds`: 缓存过期时间，默认 `3600`（1 小时），`0` 表示永不过期
+  - `max_entries`: 最大缓存条目数，默认 `2000`，超过后自动淘汰最久未访问条目
+  - `aliases`: 允许缓存的 alias 列表。空列表 = 放行所有 alias
+  - `key_fields`: 参与 cache key 的请求 body 字段。`messages` 始终参与，此列表额外控制。当 `alias` 在列表中时，只有带 alias 的请求才缓存；不在列表中则所有请求都可缓存
+
+## 缓存机制
+
+对相同请求（由 `messages` + `key_fields` 配置的字段共同决定）直接返回缓存结果，降低延迟和 API 费用。
+
+- 缓存命中时跳过后端转发，直接返回缓存内容（非流式/流式回放）
+- 命中率在 dashboard 顶部显示（Cache Hits / Cache Misses）
+- 默认使用内存 LRU + TTL 淘汰策略
+- 错误响应（非 200）不会被缓存
 
 ## 运行
 
@@ -175,7 +201,7 @@ curl http://0.0.0.0:8080/messages \
 
 访问 `/` 返回 HTML 页面，展示：
 
-- **概览卡片**：运行时间、总请求数、模型组数
+- **概览卡片**：运行时间、总请求数、模型组数、缓存命中/未命中
 - **模型配置表**：名称、后端、API Key 状态
 - **Hourly Token Usage**：最近 24 个小时的 token 柱状图，可按模型或全局 alias 分组堆叠显示；无请求的小时会保留为空柱；悬停可查看请求数、总 token、平均延迟、每输出 token 延迟以及当前分组明细
 - **最近请求**（最近 50 条）：时间、alias、模型、提供商、流式标记、状态码、延迟、输入/输出 token、缓存读写、输入/输出预览
@@ -216,6 +242,7 @@ two-API/
 │   ├── main.py              # FastAPI 入口 + 主页 HTML
 │   ├── cli.py               # CLI 启动入口
 │   ├── config.py            # YAML 配置 + Pydantic 校验
+│   ├── cache.py             # LLM 响应缓存（TTLCache + cache key）
 │   ├── router.py            # 模型名 → 后端匹配
 │   ├── forwarder.py         # httpx 转发 + 流式
 │   ├── stats.py             # 线程安全统计 + 小时用量持久化 + 最近请求记录

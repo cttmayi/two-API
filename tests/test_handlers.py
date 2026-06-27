@@ -7,12 +7,14 @@ from src.router import ModelRouter
 from src.forwarder import set_forward_client, reset_forward_client
 from src.config import Config
 from src.stats import get_stats
+from src.cache import reset_cache
 
 
 @pytest.fixture(autouse=True)
 def reset_client():
     yield
     reset_forward_client()
+    reset_cache()
 
 
 @pytest.fixture
@@ -974,11 +976,11 @@ class TestAnthropicEndpoints:
         assert resp.status_code == 200
         snapshot = get_stats().snapshot()
         recent = snapshot["recent"][0]
-        assert recent["model"] == "claude-sonnet-4-6"
+        assert recent["model"] == "sonnet"
         assert recent["alias"] == "default"
         hourly = snapshot["hourly"][0]
-        assert hourly["aliases"]["default"]["claude-sonnet-4-6"]["requests"] == 1
-        assert "claude-sonnet-4-6" in hourly["aliases"]["default"]
+        assert hourly["aliases"]["default"]["sonnet"]["requests"] == 1
+        assert "sonnet" in hourly["aliases"]["default"]
 
     @pytest.mark.asyncio
     async def test_messages_max_tokens_default(self, client, app_with_models):

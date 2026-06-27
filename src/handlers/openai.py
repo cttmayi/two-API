@@ -13,6 +13,7 @@ from src.stats import get_stats
 from src.transforms.ir import StreamEventIR
 from src.transforms.openai_chat import chat_request_from_ir, chat_response_to_ir, chat_stream_event_to_ir, messages_to_dicts
 from src.transforms.openai_responses import responses_request_to_ir, responses_response_from_ir, responses_stream_event_from_ir
+from src.cache import _should_cache, _build_cache_key, get_cache, CacheEntry, stream_from_cache
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -300,6 +301,7 @@ def _streaming_proxy_response(
     input_messages,
     parse_stats,
     request_body=None,
+    cache_key: str | None = None,
 ):
     async def stream_with_stats():
         url = _build_backend_url(entry.openai_base_url, request.url.path, request.url.query)
@@ -318,11 +320,12 @@ def _streaming_proxy_response(
                 while "\n" in partial:
                     line, partial = partial.split("\n", 1)
                     line = line.rstrip("\r")
-                    if line:
-                        sse_lines.append(line)
+                    sse_lines.append(line)
 
         latency_ms = int((time.perf_counter() - start) * 1000)
         prompt_tokens, completion_tokens, cache_read_tokens, output_content = parse_stats(sse_lines, status_code)
+        if cache_key and status_code == 200:
+            get_cache().set(cache_key, CacheEntry(sse_lines=sse_lines, created_at=time.time()))
         _record_openai_request(
             model_name=stats_model_name,
             alias_name=alias_name,
@@ -486,6 +489,23 @@ async def chat_completions(request: Request):
     body_bytes, body_json, model_name, backend_model, alias_name, entry, original_body = prepared
     start = time.perf_counter()
 
+    # Cache check
+    cache_config = request.app.state.config.cache
+    cache_key = None
+    cached_entry = None
+    cache_enabled = _should_cache(cache_config, alias_name, list(cache_config.key_fields))
+    if cache_enabled:
+        cache_key = _build_cache_key(alias_name, body_json, list(cache_config.key_fields), request.url.path)
+        cached_entry = get_cache().get(cache_key)
+    if cached_entry:
+        if body_json.get("stream", False) and cached_entry.sse_lines:
+            return StreamingResponse(stream_from_cache(cached_entry), media_type="text/event-stream")
+        elif not body_json.get("stream", False) and cached_entry.response_body:
+            try:
+                return JSONResponse(content=json.loads(cached_entry.response_body), status_code=200)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                pass
+
     try:
         if body_json.get("stream", False):
             return _streaming_proxy_response(
@@ -500,9 +520,12 @@ async def chat_completions(request: Request):
                 input_messages=lambda body: body.get("messages", []),
                 parse_stats=_chat_stream_stats,
                 request_body=original_body,
+                cache_key=cache_key,
             )
 
         resp = await forward_non_stream(request, entry.openai_base_url, entry.api_key, body=body_bytes)
+        if cache_key and resp.status_code == 200:
+            get_cache().set(cache_key, CacheEntry(response_body=resp.body, created_at=time.time()))
         latency_ms = int((time.perf_counter() - start) * 1000)
 
         prompt_tokens = None
@@ -553,6 +576,23 @@ async def responses(request: Request):
         return prepared
     body_bytes, body_json, model_name, backend_model, alias_name, entry, original_body = prepared
     start = time.perf_counter()
+
+    # Cache check
+    cache_config = request.app.state.config.cache
+    cache_key = None
+    cached_entry = None
+    cache_enabled = _should_cache(cache_config, alias_name, list(cache_config.key_fields))
+    if cache_enabled:
+        cache_key = _build_cache_key(alias_name, body_json, list(cache_config.key_fields), request.url.path)
+        cached_entry = get_cache().get(cache_key)
+    if cached_entry:
+        if body_json.get("stream", False) and cached_entry.sse_lines:
+            return StreamingResponse(stream_from_cache(cached_entry), media_type="text/event-stream")
+        elif not body_json.get("stream", False) and cached_entry.response_body:
+            try:
+                return JSONResponse(content=json.loads(cached_entry.response_body), status_code=200)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                pass
 
     try:
         if entry.responses_to_chat:
@@ -639,9 +679,12 @@ async def responses(request: Request):
                 input_messages=lambda body: messages_to_dicts(responses_request_to_ir(body).messages),
                 parse_stats=_responses_stream_stats,
                 request_body=original_body,
+                cache_key=cache_key,
             )
 
         resp = await forward_non_stream(request, entry.openai_base_url, entry.api_key, body=body_bytes)
+        if cache_key and resp.status_code == 200:
+            get_cache().set(cache_key, CacheEntry(response_body=resp.body, created_at=time.time()))
         latency_ms = int((time.perf_counter() - start) * 1000)
 
         input_tokens = None

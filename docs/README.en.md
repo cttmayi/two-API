@@ -47,6 +47,17 @@ models:
     default: gpt-4o-mini
     pro: gpt-4o
 
+  # Response cache (optional, enabled by default)
+  cache:
+    enabled: true
+    ttl_seconds: 3600
+    max_entries: 2000
+    aliases:
+      - default
+    key_fields:
+      - model
+      - alias
+
 logging:
   level: INFO
   output: file
@@ -61,6 +72,21 @@ logging:
 - `api_key`: Optional. When set, it is injected as `Authorization: Bearer <key>` into backend requests.
 - `max_tokens`: Optional. When the client omits `max_tokens` / `max_output_tokens`, the proxy injects this default value.
 - `responses_to_chat`: Optional. Set to `true` to convert client Responses API requests to backend Chat Completions requests, then convert Chat output back to Responses format; `developer` roles, `input_text` content blocks, and function `tools` are converted to Chat-compatible formats, blank messages are filtered, and Chat tool calls are converted back to Responses function calls.
+- `cache`: Response cache (optional). Returns cached results for identical requests to reduce latency and API costs.
+  - `enabled`: Master switch, defaults to `true`
+  - `ttl_seconds`: Cache TTL in seconds, defaults to `3600` (1 hour); `0` means no expiration
+  - `max_entries`: Maximum cache entries, defaults to `2000`; LRU eviction when exceeded
+  - `aliases`: Allowlist of alias names to cache. Empty list = allow all aliases
+  - `key_fields`: Additional request body fields that participate in the cache key. `messages` is always included. When `alias` is in this list, only requests with a non-empty alias are cached
+
+## Cache Behavior
+
+Identical requests (determined by `messages` + configured `key_fields`) are served from cache, skipping the backend entirely.
+
+- Cache hits bypass forwarding and return cached content directly (both streaming and non-streaming)
+- Hit rate is displayed at the top of the dashboard (Cache Hits / Cache Misses)
+- In-memory LRU + TTL eviction strategy
+- Error responses (non-200) are never cached
 
 ## Running
 
@@ -174,7 +200,7 @@ curl http://0.0.0.0:8080/messages \
 
 Visit `/` to see an HTML page showing:
 
-- **Overview cards**: Uptime, total requests, model group count
+- **Overview cards**: Uptime, total requests, model group count, cache hits/misses
 - **Model configuration table**: Name, backend, API key status
 - **Hourly Token Usage**: Token usage chart for the latest 24 hours, stacked by model or global alias with distinct colors; hours without requests remain visible as empty bars; hover to view requests, total tokens, average latency, latency per output token, and details for the selected grouping
 - **Recent requests** (last 50): Time, alias, model, provider, streaming flag, status code, latency, input/output tokens, cache read/write, input/output preview
@@ -215,6 +241,7 @@ two-API/
 │   ├── main.py              # FastAPI entry point + homepage HTML
 │   ├── cli.py               # CLI launcher
 │   ├── config.py            # YAML config + Pydantic validation
+│   ├── cache.py             # LLM response cache (TTLCache + cache key)
 │   ├── router.py            # Model name → backend matching
 │   ├── forwarder.py         # httpx forwarding + streaming
 │   ├── stats.py             # Thread-safe stats + hourly usage persistence + recent request tracking
