@@ -2,16 +2,29 @@ from contextlib import asynccontextmanager
 import html as _html
 import json
 import os
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import HTMLResponse, Response
 from src.config import load_config
 from src.router import ModelRouter
 from src.logging_setup import setup_logging
 from src.stats import get_stats, init_stats
+from src.cache import init_cache, get_cache, CacheConfig
 
 
 def usage_path_for_log_dir(log_dir: str) -> str:
     return os.path.join(os.path.dirname(os.path.expanduser(log_dir)), "usage.json")
+
+
+def mask_api_key(key: str | None) -> str | None:
+    if key is None:
+        return None
+    if len(key) <= 3:
+        return "****"
+    return key[:3] + "****"
+
+
+def is_masked_key(value: str | None) -> bool:
+    return value.endswith("****")
 
 
 @asynccontextmanager
@@ -19,10 +32,13 @@ async def lifespan(app: FastAPI):
     # Startup
     config = load_config("~/.two-api/config.yaml")
     app.state.config = config
+    app.state.config_path = os.path.expanduser("~/.two-api/config.yaml")
     app.state.router = ModelRouter(config.models)
     log_path = setup_logging(config.logging.dir, config.logging.level)
     app.state.log_path = log_path
     init_stats(usage_path_for_log_dir(config.logging.dir))
+    cc = config.cache
+    init_cache(CacheConfig(cc.enabled, cc.ttl_seconds, cc.max_entries, cc.aliases, cc.key_fields))
     import structlog
     logger = structlog.get_logger()
     logger.info("proxy_startup", log_path=log_path, host=config.server.host, port=config.server.port)
@@ -259,6 +275,16 @@ async def homepage(request: Request):
     uptime_s = stats["uptime_seconds"] % 60
     total_requests = stats["total_requests"]
     model_count = len(config.models)
+
+    cache_hits = 0
+    cache_misses = 0
+    try:
+        cstore = get_cache()
+        cache_hits = cstore.hits
+        cache_misses = cstore.misses
+    except (AssertionError, Exception):
+        pass
+
     if recent_rows:
         recent_section = '<table class="recent-table"><thead><tr><th>Time</th><th>Alias</th><th>Model</th><th>Provider</th><th>Stream</th><th>Status</th><th class="cell-num">Prompt</th><th class="cell-num">Completion</th><th class="cell-num">Cache Read</th><th class="cell-num">Cache Write</th><th class="cell-num">Latency</th><th>Input</th><th>Output</th><th></th></tr></thead><tbody>' + recent_rows + '</tbody></table>'
     else:
@@ -684,6 +710,14 @@ footer {{
             <div class="value">{model_count}</div>
             <div class="label">Model Groups</div>
         </div>
+        <div class="summary-card">
+            <div class="value">{cache_hits}</div>
+            <div class="label">Cache Hits</div>
+        </div>
+        <div class="summary-card">
+            <div class="value">{cache_misses}</div>
+            <div class="label">Cache Misses</div>
+        </div>
     </div>
 </header>
 
@@ -1023,6 +1057,7 @@ renderHourlyChart();
 </html>""".format(
         uptime_m=uptime_m, uptime_s=uptime_s,
         total_requests=total_requests, model_count=model_count,
+        cache_hits=cache_hits, cache_misses=cache_misses,
         config_rows=config_rows,
         recent_section=recent_section, hourly_json=hourly_json,
     )
@@ -1050,8 +1085,21 @@ async def download_recent(request: Request, i: str = ""):
     )
 
 
+config_router = APIRouter()
+
+
+@config_router.get("/api/config")
+async def get_api_config(request: Request):
+    config_dict = request.app.state.config.model_dump(mode="python")
+    for model in config_dict.get("models", []):
+        if "api_key" in model:
+            model["api_key"] = mask_api_key(model["api_key"])
+    return config_dict
+
+
 from src.handlers.openai import router as openai_router
 from src.handlers.anthropic import router as anthropic_router
 
 app.include_router(openai_router)
 app.include_router(anthropic_router)
+app.include_router(config_router)
