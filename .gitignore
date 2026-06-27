@@ -1,4 +1,5 @@
 config.yaml
+docs/superpowers/
 __pycache__/
 *.egg-info/
 .eggs/
