@@ -227,3 +227,50 @@ async def test_post_config_replaces_api_key_when_new_value_given(tmp_path):
 
     assert resp.status_code == 200
     assert app.state.config.models[0].api_key == "sk-brand-new-key"
+
+
+@pytest.mark.asyncio
+async def test_post_config_invalid_data_returns_422(tmp_path):
+    """Missing required 'models' field should return 422."""
+    app = FastAPI()
+    app.state.config = Config(
+        models=[ModelEntry(names=["gpt-4o"], openai_base_url="https://api.openai.com")],
+    )
+    app.state.router = ModelRouter(app.state.config.models)
+    app.state.config_path = str(tmp_path / "bad1.yaml")
+
+    from src.main import config_router
+    app.include_router(config_router)
+
+    bad_config = {"server": {"host": "0.0.0.0", "port": 8080}}
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/api/config", json=bad_config)
+
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_post_config_invalid_model_no_base_url_returns_422(tmp_path):
+    """Model entry without any base_url should return 422."""
+    app = FastAPI()
+    app.state.config = Config(
+        models=[ModelEntry(names=["gpt-4o"], openai_base_url="https://api.openai.com")],
+    )
+    app.state.router = ModelRouter(app.state.config.models)
+    app.state.config_path = str(tmp_path / "bad2.yaml")
+
+    from src.main import config_router
+    app.include_router(config_router)
+
+    bad_config = {
+        "server": {"host": "0.0.0.0", "port": 8080},
+        "models": [{"names": ["invalid-model"]}],
+    }
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/api/config", json=bad_config)
+
+    assert resp.status_code == 422
