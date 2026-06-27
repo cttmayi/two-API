@@ -2,9 +2,10 @@ from contextlib import asynccontextmanager
 import html as _html
 import json
 import os
+import yaml
 from fastapi import APIRouter, FastAPI, Request
-from fastapi.responses import HTMLResponse, Response
-from src.config import load_config
+from fastapi.responses import HTMLResponse, JSONResponse, Response
+from src.config import load_config, Config
 from src.router import ModelRouter
 from src.logging_setup import setup_logging
 from src.stats import get_stats, init_stats
@@ -24,6 +25,8 @@ def mask_api_key(key: str | None) -> str | None:
 
 
 def is_masked_key(value: str | None) -> bool:
+    if value is None:
+        return False
     return value.endswith("****")
 
 
@@ -1095,6 +1098,40 @@ async def get_api_config(request: Request):
         if "api_key" in model:
             model["api_key"] = mask_api_key(model["api_key"])
     return config_dict
+
+
+@config_router.post("/api/config")
+async def post_api_config(request: Request):
+    body = await request.json()
+
+    # Restore masked API keys from current config with bounds checking
+    current_config_dict = request.app.state.config.model_dump(mode="python")
+    current_models = current_config_dict.get("models", [])
+    for i, model in enumerate(body.get("models", [])):
+        if is_masked_key(model.get("api_key")):
+            if i < len(current_models):
+                model["api_key"] = current_models[i].get("api_key")
+            else:
+                model["api_key"] = None
+
+    # Validate with Pydantic
+    try:
+        new_config = Config(**body)
+    except Exception as e:
+        return JSONResponse(status_code=422, content={"detail": str(e)})
+
+    # Write YAML to config_path
+    config_path = request.app.state.config_path
+    with open(config_path, "w") as f:
+        yaml.dump(new_config.model_dump(mode="python"), f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+    # Hot-reload app state
+    request.app.state.config = new_config
+    request.app.state.router = ModelRouter(new_config.models)
+    cc = new_config.cache
+    init_cache(CacheConfig(cc.enabled, cc.ttl_seconds, cc.max_entries, cc.aliases, cc.key_fields))
+
+    return {"status": "ok"}
 
 
 from src.handlers.openai import router as openai_router
