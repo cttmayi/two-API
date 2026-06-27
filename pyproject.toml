@@ -48,3 +48,6 @@ Homepage = "https://github.com/twotwo/two-API"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["src", "src.*"]
+
+[tool.setuptools.package_data]
+src = ["*.yaml"]

@@ -1,6 +1,14 @@
 import argparse
+import importlib.resources
 import os
 import sys
+
+
+def _write_default_config(path):
+    """Copy default_config.yaml (bundled with the package) to the given path."""
+    content = importlib.resources.read_text("src", "default_config.yaml")
+    with open(path, "w") as f:
+        f.write(content)
 
 
 def main():
@@ -13,8 +21,9 @@ def main():
 
     config_path = os.path.expanduser(args.config)
     if not os.path.exists(config_path):
-        print(f"Config file not found: {config_path}")
-        sys.exit(1)
+        os.makedirs(os.path.dirname(config_path), exist_ok=True)
+        _write_default_config(config_path)
+        print(f"Created default config: {config_path}")
 
     import uvicorn
     from src.config import load_config, ServerConfig
