@@ -1134,6 +1134,533 @@ async def post_api_config(request: Request):
     return {"status": "ok"}
 
 
+@config_router.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request):
+    return """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings - two-API Proxy</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f0f2f5;
+    color: #1a1a2e;
+    min-height: 100vh;
+    padding: 2.5rem 3rem;
+}
+.nav {
+    display: flex;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+    align-items: center;
+}
+.nav a {
+    text-decoration: none;
+    color: #2563eb;
+    font-weight: 600;
+    font-size: 0.95rem;
+    padding: 4px 0;
+    border-bottom: 2px solid transparent;
+    transition: border-color 0.15s;
+}
+.nav a:hover { border-bottom-color: #2563eb; }
+.nav a.active { border-bottom-color: #2563eb; }
+.nav .title {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #1a1a2e;
+    margin-right: 1rem;
+}
+.section { margin-bottom: 2rem; }
+.section-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #444;
+    margin-bottom: 0.85rem;
+}
+.form-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 1.25rem 1.5rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-bottom: 1rem;
+}
+.form-row {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-end;
+}
+.form-row .form-group { flex: 1; }
+.form-group label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+.form-group input,
+.form-group select {
+    padding: 8px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: #333;
+    background: #fff;
+    outline: none;
+    transition: border-color 0.15s;
+}
+.form-group input:focus,
+.form-group select:focus { border-color: #2563eb; }
+.form-group input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+}
+.toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+.toggle-row label { margin-bottom: 0; }
+.model-entry {
+    border: 1px solid #eef0f5;
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 0.75rem;
+    position: relative;
+}
+.model-entry .remove-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.75rem;
+    background: none;
+    border: none;
+    color: #c44;
+    cursor: pointer;
+    font-size: 1.1rem;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+.model-entry .remove-btn:hover { background: #fff0f0; }
+.add-btn {
+    padding: 8px 16px;
+    border: 1px dashed #ccc;
+    border-radius: 6px;
+    background: transparent;
+    color: #666;
+    cursor: pointer;
+    font-size: 0.85rem;
+    width: 100%;
+    margin-top: 0.5rem;
+}
+.add-btn:hover { border-color: #2563eb; color: #2563eb; background: #f5f7ff; }
+.tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    padding: 6px 8px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    min-height: 38px;
+    align-items: center;
+}
+.tag-list input {
+    border: none;
+    outline: none;
+    font-size: 0.85rem;
+    flex: 1;
+    min-width: 80px;
+    padding: 2px 0;
+}
+.tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #eef2ff;
+    color: #2563eb;
+    font-size: 0.78rem;
+    padding: 3px 8px;
+    border-radius: 4px;
+}
+.tag-remove {
+    cursor: pointer;
+    font-weight: 700;
+    color: #2563eb;
+    opacity: 0.6;
+}
+.tag-remove:hover { opacity: 1; }
+.alias-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+.alias-row input { flex: 1; }
+.alias-row .remove-btn {
+    background: none;
+    border: none;
+    color: #c44;
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 4px;
+}
+.actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 2rem;
+}
+.btn {
+    padding: 10px 24px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: background 0.15s;
+}
+.btn-primary { background: #2563eb; color: #fff; }
+.btn-primary:hover { background: #1d4ed8; }
+.btn-secondary { background: #e5e7eb; color: #444; }
+.btn-secondary:hover { background: #d1d5db; }
+.toast {
+    display: none;
+    position: fixed;
+    top: 1.5rem;
+    right: 1.5rem;
+    padding: 12px 20px;
+    border-radius: 8px;
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.9rem;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.toast-success { background: #16a34a; }
+.toast-error { background: #dc2626; }
+</style>
+</head>
+<body>
+
+<div class="nav">
+    <span class="title">two-API Proxy</span>
+    <a href="/">Dashboard</a>
+    <a href="/settings" class="active">Settings</a>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<form id="config-form">
+    <!-- Server -->
+    <div class="section">
+        <div class="section-title">Server</div>
+        <div class="form-card">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Host</label>
+                    <input type="text" id="server-host" name="server.host">
+                </div>
+                <div class="form-group">
+                    <label>Port</label>
+                    <input type="number" id="server-port" name="server.port" min="1" max="65535">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Models -->
+    <div class="section">
+        <div class="section-title">Models</div>
+        <div class="form-card" id="models-container">
+            <div id="model-entries"></div>
+            <button type="button" class="add-btn" onclick="addModelEntry()">+ Add Model</button>
+        </div>
+    </div>
+
+    <!-- Alias -->
+    <div class="section">
+        <div class="section-title">Alias</div>
+        <div class="form-card">
+            <div id="alias-entries"></div>
+            <button type="button" class="add-btn" onclick="addAliasEntry()">+ Add Alias</button>
+        </div>
+    </div>
+
+    <!-- Logging -->
+    <div class="section">
+        <div class="section-title">Logging</div>
+        <div class="form-card">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Level</label>
+                    <select id="logging-level">
+                        <option value="DEBUG">DEBUG</option>
+                        <option value="INFO" selected>INFO</option>
+                        <option value="WARNING">WARNING</option>
+                        <option value="ERROR">ERROR</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Output</label>
+                    <select id="logging-output">
+                        <option value="file">file</option>
+                        <option value="console">console</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Directory</label>
+                    <input type="text" id="logging-dir">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cache -->
+    <div class="section">
+        <div class="section-title">Cache</div>
+        <div class="form-card">
+            <div class="toggle-row form-group">
+                <input type="checkbox" id="cache-enabled">
+                <label for="cache-enabled">Enabled</label>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>TTL (seconds)</label>
+                    <input type="number" id="cache-ttl" min="0">
+                </div>
+                <div class="form-group">
+                    <label>Max Entries</label>
+                    <input type="number" id="cache-max-entries" min="1">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Aliases</label>
+                    <div class="tag-list" id="cache-aliases"></div>
+                </div>
+                <div class="form-group">
+                    <label>Key Fields</label>
+                    <div class="tag-list" id="cache-key-fields"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="actions">
+        <button type="button" class="btn btn-primary" onclick="saveConfig()">Save</button>
+        <button type="button" class="btn btn-secondary" onclick="loadConfig()">Cancel</button>
+    </div>
+</form>
+
+<script>
+function showToast(msg, type) {
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast toast-' + type;
+    t.style.display = 'block';
+    setTimeout(function() { t.style.display = 'none'; }, 3000);
+}
+
+function addTag(parentId, value) {
+    var container = document.getElementById(parentId);
+    var tag = document.createElement('span');
+    tag.className = 'tag';
+    tag.innerHTML = value + ' <span class="tag-remove" onclick="this.parentElement.remove()">&#10005;</span>';
+    container.insertBefore(tag, container.lastElement);
+}
+
+function setupTagInput(containerId, existingValues) {
+    var container = document.getElementById(containerId);
+    container.innerHTML = '';
+    (existingValues || []).forEach(function(v) { addTag(containerId, v); });
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Add...';
+    input.onkeydown = function(e) {
+        if (e.key === 'Enter' || e.key === ',') {
+            e.preventDefault();
+            var val = this.value.trim();
+            if (val) { addTag(containerId, val); }
+            this.value = '';
+        }
+    };
+    container.appendChild(input);
+}
+
+function getTagValues(containerId) {
+    var tags = document.querySelectorAll('#' + containerId + ' .tag');
+    return Array.from(tags).map(function(t) {
+        return t.textContent.replace('×', '').trim();
+    }).filter(Boolean);
+}
+
+var modelIndex = 0;
+
+function addModelEntry(data) {
+    data = data || {};
+    var div = document.createElement('div');
+    div.className = 'model-entry';
+    var names = (data.names || []).map(function(n) {
+        if (typeof n === 'object') {
+            var k = Object.keys(n)[0];
+            return k + ':' + n[k];
+        }
+        return n;
+    }).join(', ');
+    div.innerHTML = '<button type="button" class="remove-btn" onclick="this.parentElement.remove()">&#10005;</button>' +
+        '<div class="form-row">' +
+            '<div class="form-group" style="flex:2">' +
+                '<label>Names (comma-separated, key:value for alias mapping)</label>' +
+                '<input type="text" class="model-names" value="' + names + '">' +
+            '</div>' +
+        '</div>' +
+        '<div class="form-row">' +
+            '<div class="form-group"><label>OpenAI Base URL</label><input type="text" class="model-openai" value="' + (data.openai_base_url || '') + '"></div>' +
+            '<div class="form-group"><label>Anthropic Base URL</label><input type="text" class="model-anthropic" value="' + (data.anthropic_base_url || '') + '"></div>' +
+        '</div>' +
+        '<div class="form-row">' +
+            '<div class="form-group"><label>API Key</label><input type="password" class="model-key" value="' + (data.api_key || '') + '"></div>' +
+            '<div class="form-group" style="flex:0.5"><label>Max Tokens</label><input type="number" class="model-max-tokens" value="' + (data.max_tokens || '') + '" min="1"></div>' +
+            '<div class="form-group toggle-row" style="flex:0.5;align-self:flex-end;padding-bottom:4px">' +
+                '<input type="checkbox" class="model-r2c" ' + (data.responses_to_chat ? 'checked' : '') + '>' +
+                '<label style="text-transform:none">R→C</label>' +
+            '</div>' +
+        '</div>';
+    document.getElementById('model-entries').appendChild(div);
+}
+
+function collectModels() {
+    var entries = document.querySelectorAll('.model-entry');
+    return Array.from(entries).map(function(e) {
+        var namesRaw = e.querySelector('.model-names').value;
+        var names = [];
+        namesRaw.split(',').forEach(function(s) {
+            s = s.trim();
+            if (!s) return;
+            if (s.indexOf(':') > -1) {
+                var parts = s.split(':');
+                var obj = {};
+                obj[parts[0].trim()] = parts.slice(1).join(':').trim();
+                names.push(obj);
+            } else {
+                names.push(s);
+            }
+        });
+        var key = e.querySelector('.model-key').value;
+        var maxT = e.querySelector('.model-max-tokens').value;
+        return {
+            names: names,
+            openai_base_url: e.querySelector('.model-openai').value || null,
+            anthropic_base_url: e.querySelector('.model-anthropic').value || null,
+            api_key: key || null,
+            max_tokens: maxT ? parseInt(maxT) : null,
+            responses_to_chat: e.querySelector('.model-r2c').checked,
+        };
+    });
+}
+
+function addAliasEntry(key, value) {
+    key = key || '';
+    value = value || '';
+    var div = document.createElement('div');
+    div.className = 'alias-row';
+    div.innerHTML = '<input type="text" class="alias-key" placeholder="Alias name" value="' + key + '">' +
+        '<input type="text" class="alias-value" placeholder="Target model" value="' + value + '">' +
+        '<button type="button" class="remove-btn" onclick="this.parentElement.remove()">&#10005;</button>';
+    document.getElementById('alias-entries').appendChild(div);
+}
+
+function collectAliases() {
+    var rows = document.querySelectorAll('#alias-entries .alias-row');
+    var obj = {};
+    rows.forEach(function(r) {
+        var k = r.querySelector('.alias-key').value.trim();
+        var v = r.querySelector('.alias-value').value.trim();
+        if (k) obj[k] = v;
+    });
+    return obj;
+}
+
+function loadConfig() {
+    fetch('/api/config')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            document.getElementById('server-host').value = data.server.host;
+            document.getElementById('server-port').value = data.server.port;
+
+            document.getElementById('model-entries').innerHTML = '';
+            (data.models || []).forEach(function(m) { addModelEntry(m); });
+
+            document.getElementById('alias-entries').innerHTML = '';
+            Object.keys(data.alias || {}).forEach(function(k) { addAliasEntry(k, data.alias[k]); });
+
+            document.getElementById('logging-level').value = data.logging.level;
+            document.getElementById('logging-output').value = data.logging.output;
+            document.getElementById('logging-dir').value = data.logging.dir;
+
+            document.getElementById('cache-enabled').checked = data.cache.enabled;
+            document.getElementById('cache-ttl').value = data.cache.ttl_seconds;
+            document.getElementById('cache-max-entries').value = data.cache.max_entries;
+            setupTagInput('cache-aliases', data.cache.aliases);
+            setupTagInput('cache-key-fields', data.cache.key_fields);
+        })
+        .catch(function() { showToast('Failed to load config', 'error'); });
+}
+
+function saveConfig() {
+    var data = {
+        server: {
+            host: document.getElementById('server-host').value,
+            port: parseInt(document.getElementById('server-port').value),
+        },
+        models: collectModels(),
+        alias: collectAliases(),
+        logging: {
+            level: document.getElementById('logging-level').value,
+            output: document.getElementById('logging-output').value,
+            dir: document.getElementById('logging-dir').value,
+        },
+        cache: {
+            enabled: document.getElementById('cache-enabled').checked,
+            ttl_seconds: parseInt(document.getElementById('cache-ttl').value) || 3600,
+            max_entries: parseInt(document.getElementById('cache-max-entries').value) || 2000,
+            aliases: getTagValues('cache-aliases'),
+            key_fields: getTagValues('cache-key-fields'),
+        },
+    };
+
+    fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    })
+        .then(function(r) {
+            if (r.ok) {
+                showToast('Configuration saved successfully!', 'success');
+                return r.json();
+            }
+            return r.json().then(function(e) {
+                var msg = e.detail ? JSON.stringify(e.detail) : 'Unknown error';
+                throw new Error(msg);
+            });
+        })
+        .catch(function(err) { showToast('Save failed: ' + err.message, 'error'); });
+}
+
+loadConfig();
+</script>
+
+</body>
+</html>"""
+
+
 from src.handlers.openai import router as openai_router
 from src.handlers.anthropic import router as anthropic_router
 

@@ -252,6 +252,29 @@ async def test_post_config_invalid_data_returns_422(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_settings_page_renders():
+    app = FastAPI()
+    app.state.config = Config(
+        models=[ModelEntry(names=["gpt-4o"], openai_base_url="https://api.openai.com")],
+    )
+    app.state.router = ModelRouter(app.state.config.models)
+    app.state.config_path = "/tmp/test-settings.yaml"
+
+    from src.main import config_router
+    app.include_router(config_router)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/settings")
+
+    assert resp.status_code == 200
+    assert "Settings" in resp.text
+    assert "Server" in resp.text or "server" in resp.text.lower()
+    assert "Models" in resp.text or "models" in resp.text.lower()
+    assert "Save" in resp.text
+
+
+@pytest.mark.asyncio
 async def test_post_config_invalid_model_no_base_url_returns_422(tmp_path):
     """Model entry without any base_url should return 422."""
     app = FastAPI()
