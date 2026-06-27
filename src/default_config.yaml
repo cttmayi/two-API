@@ -1,25 +1,73 @@
 # two-API 配置文件
-# 首次启动自动生成，编辑后重启生效。
-# 也可在浏览器中访问 /settings 通过 Web 页面配置。
+# 首次启动自动生成。编辑后重启生效，也可访问 /settings 通过 Web 页面配置。
 
 server:
   host: "0.0.0.0"
   port: 8080
 
+# ============================================================
 # 模型配置（至少添加一个模型才能转发请求）
+# ============================================================
+# models 是列表，每一项对应一组模型名和后端配置。
+# openai_base_url 和 anthropic_base_url 至少配置一个。
+# 只配 openai_base_url 的模型只能走 OpenAI 兼容端点（/chat/completions）；
+# 只配 anthropic_base_url 的模型只能走 Anthropic 端点（/messages）；
+# 两者都配则同一组模型名可用于两类端点。
+#
 # models:
 #   - names:
-#       - gpt-4o
+#       - gpt-4o                # 普通字符串：客户端和后端使用相同模型名
+#       - fast: gpt-4o-mini     # 别名映射：客户端用 "fast" 请求，转发为 "gpt-4o-mini"
 #     openai_base_url: https://api.openai.com/v1
 #     api_key: sk-your-openai-key
+#     # max_tokens: 4096        # 可选，客户端未传 max_tokens 时自动注入
+#     # responses_to_chat: false  # 可选，是否将 Responses API 转为 Chat Completions 转发
 #
 #   - names:
 #       - claude-sonnet-4-6
 #     anthropic_base_url: https://api.anthropic.com/v1
 #     api_key: sk-ant-your-anthropic-key
-#     max_tokens: 8192
+#     # max_tokens: 8192
 #
-# 可选功能：
-#   alias:  全局别名，请求中 model 先查此映射
-#   cache:  响应缓存，减少重复请求延迟
-#   logging: 日志级别和输出目录
+#   - names:
+#       - my-model              # 同时支持两类端点的配置
+#     openai_base_url: https://example.com/openai/v1
+#     anthropic_base_url: https://example.com/anthropic/v1
+#     api_key: your-key
+#
+# 后端 URL 拼接规则：代理将当前请求路径拼接到 base URL 后面。
+# 例如 openai_base_url: https://api.openai.com/v1 时，
+# 客户端 POST /chat/completions → 后端 POST https://api.openai.com/v1/chat/completions
+#
+# 不支持 Anthropic 以外的 /v1 路径时（如火山方舟 ark），填完整前缀：
+#   openai_base_url: https://ark.cn-beijing.volces.com/api/v3
+
+# ============================================================
+# 全局别名（可选）
+# ============================================================
+# 请求的 model 字段先查此映射，匹配则替换后再路由。适合集中管理常用别名。
+# alias:
+#   default: gpt-4o-mini
+#   pro: gpt-4o
+
+# ============================================================
+# 响应缓存（可选）
+# ============================================================
+# 对相同请求返回缓存结果，降低延迟和 API 费用。
+# 缓存命中时跳过后端转发，直接返回内容（支持流式/非流式）。
+# 错误响应（非 200）不缓存。默认使用 LRU + TTL 淘汰策略。
+#
+# cache:
+#   enabled: false           # 总开关
+#   ttl_seconds: 3600        # 过期时间（秒），0 = 永不过期
+#   max_entries: 2000        # 最大条目数，超过后淘汰最久未访问的
+#   aliases: []              # 仅缓存这些 alias 的请求，空 = 放行所有
+#   key_fields: []           # 额外参与 cache key 的字段，messages 始终参与
+
+# ============================================================
+# 日志配置（可选）
+# ============================================================
+# logging:
+#   level: INFO               # DEBUG / INFO / WARNING / ERROR
+#   output: file              # 保留字段，日志写入文件同时输出到控制台
+#   dir: ~/.two-api/logs      # 日志目录

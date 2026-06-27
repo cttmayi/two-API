@@ -19,7 +19,7 @@ pip install -e ".[dev]"
 
 ## 快速开始
 
-复制 `config.yaml.example` 为 `~/.two-api/config.yaml`（首次使用需 `mkdir -p ~/.two-api`），编辑模型和后端信息：
+首次运行 `two-api` 会自动在 `~/.two-api/config.yaml` 生成默认配置文件，编辑模型和后端信息后重新启动即可：
 
 ```yaml
 server:

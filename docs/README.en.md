@@ -17,7 +17,7 @@ pip install -e ".[dev]"
 
 ## Quick Start
 
-Copy `config.yaml.example` to `~/.two-api/config.yaml` (first time: `mkdir -p ~/.two-api`), then edit the model and backend info:
+Run `two-api` — it auto-creates a default config at `~/.two-api/config.yaml` on first launch. Edit the model and backend info, then restart:
 
 ```yaml
 server:
