@@ -5,6 +5,12 @@ from src.config import Config, LoggingConfig, ModelEntry
 from src.main import app, usage_path_for_log_dir
 from src.router import ModelRouter
 from src.stats import get_stats
+from src.cache import reset_cache
+
+
+@pytest.fixture(autouse=True)
+def reset_state():
+    reset_cache()
 
 
 @pytest.fixture(autouse=True)
@@ -357,3 +363,20 @@ async def test_homepage_renders_structured_error_output_preview():
     # Error data is in the hidden JSON detail section, not in the preview
     assert 'backend_status' in resp.text and '400' in resp.text
     assert 'backend_error' in resp.text and 'empty response body' in resp.text
+
+
+@pytest.mark.asyncio
+async def test_homepage_has_settings_link():
+    from src.main import app
+    from src.config import Config, ModelEntry
+    from src.router import ModelRouter
+    app.state.config = Config(models=[ModelEntry(names=["gpt-4o"], openai_base_url="https://api.openai.com")])
+    app.state.router = ModelRouter(app.state.config.models)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/")
+
+    assert resp.status_code == 200
+    assert 'href="/settings"' in resp.text
+    assert "Settings" in resp.text

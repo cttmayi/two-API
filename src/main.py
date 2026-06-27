@@ -326,6 +326,18 @@ body {{
 .summary-card .value {{ font-size: 1.75rem; font-weight: 700; color: #1a1a2e; }}
 .summary-card .label {{ font-size: 0.8rem; color: #999; text-transform: uppercase; letter-spacing: 0.4px; }}
 
+.nav-link {{
+    text-decoration: none;
+    color: #2563eb;
+    font-weight: 600;
+    font-size: 0.9rem;
+    padding: 4px 0;
+    border-bottom: 2px solid transparent;
+    transition: border-color 0.15s;
+}}
+.nav-link:hover {{ border-bottom-color: #2563eb; }}
+.nav-link.active {{ border-bottom-color: #2563eb; }}
+
 .section {{ margin-bottom: 2.5rem; }}
 .section-title {{
     font-size: 1.05rem;
@@ -695,10 +707,11 @@ footer {{
 </head>
 <body>
 
-<header style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem;">
-    <div>
-        <h1 style="font-size:1.6rem; font-weight:700; color:#1a1a2e;">two-API Proxy</h1>
-        <div style="color:#999; font-size:0.85rem; margin-top:0.15rem;">LLM API Proxy &mdash; OpenAI &amp; Anthropic compatible</div>
+<div class="nav" style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1.5rem;">
+    <div style="display:flex; align-items:center; gap:1.5rem;">
+        <span style="font-size:1.3rem; font-weight:700; color:#1a1a2e;">two-API Proxy</span>
+        <a href="/" class="nav-link active">Dashboard</a>
+        <a href="/settings" class="nav-link">Settings</a>
     </div>
     <div class="summary" style="margin-bottom:0;">
         <div class="summary-card">
@@ -722,7 +735,7 @@ footer {{
             <div class="label">Cache Misses</div>
         </div>
     </div>
-</header>
+</div>
 
 <div class="section">
     <div class="section-title" style="cursor:pointer; user-select:none;" onclick="toggleSection('config-body')">
