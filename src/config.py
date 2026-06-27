@@ -54,7 +54,7 @@ class CacheConfigModel(BaseModel):
 
 class Config(BaseModel):
     server: ServerConfig = ServerConfig()
-    models: list[ModelEntry]
+    models: list[ModelEntry] = []
     alias: dict[str, str] = {}
     logging: LoggingConfig = LoggingConfig()
     cache: CacheConfigModel = CacheConfigModel()
