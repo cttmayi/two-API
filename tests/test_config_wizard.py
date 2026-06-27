@@ -30,11 +30,12 @@ async def test_get_config_returns_config_json():
     assert data["server"]["port"] == 8080
     assert len(data["models"]) == 1
     assert data["models"][0]["names"] == ["gpt-4o"]
-    assert data["models"][0]["api_key"] == "sk-****"
+    assert data["models"][0]["api_key"] == "sk-real-key-12345"
 
 
 @pytest.mark.asyncio
-async def test_get_config_masks_api_key():
+async def test_get_config_returns_raw_api_key():
+    """API keys are returned as-is, not masked."""
     app = FastAPI()
     app.state.config = Config(
         models=[ModelEntry(names=["gpt-4o"], openai_base_url="https://api.openai.com", api_key="sk-real-key-12345")],
@@ -50,8 +51,7 @@ async def test_get_config_masks_api_key():
 
     assert resp.status_code == 200
     data = resp.json()
-    assert data["models"][0]["api_key"] == "sk-****"
-    assert "real-key" not in data["models"][0]["api_key"]
+    assert data["models"][0]["api_key"] == "sk-real-key-12345"
 
 
 @pytest.mark.asyncio

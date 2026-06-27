@@ -1106,11 +1106,7 @@ config_router = APIRouter()
 
 @config_router.get("/api/config")
 async def get_api_config(request: Request):
-    config_dict = request.app.state.config.model_dump(mode="python")
-    for model in config_dict.get("models", []):
-        if "api_key" in model:
-            model["api_key"] = mask_api_key(model["api_key"])
-    return config_dict
+    return request.app.state.config.model_dump(mode="python")
 
 
 @config_router.post("/api/config")
@@ -1358,6 +1354,13 @@ body {
 }
 .toast-success { background: #16a34a; }
 .toast-error { background: #dc2626; }
+.help-text {
+    font-size: 0.75rem;
+    color: #999;
+    margin-top: 0.15rem;
+    margin-bottom: 0.5rem;
+    line-height: 1.4;
+}
 </style>
 </head>
 <body>
@@ -1374,6 +1377,7 @@ body {
     <!-- Server -->
     <div class="section">
         <div class="section-title">Server</div>
+        <div class="help-text">Listening address and port for the proxy server.</div>
         <div class="form-card">
             <div class="form-row">
                 <div class="form-group">
@@ -1391,6 +1395,7 @@ body {
     <!-- Models -->
     <div class="section">
         <div class="section-title">Models</div>
+        <div class="help-text">Each group defines one or more model names that route to the same backend. At least one base URL (OpenAI or Anthropic) is required.</div>
         <div class="form-card" id="models-container">
             <div id="model-entries"></div>
             <button type="button" class="add-btn" onclick="addModelEntry()">+ Add Model</button>
@@ -1400,6 +1405,7 @@ body {
     <!-- Alias -->
     <div class="section">
         <div class="section-title">Alias</div>
+        <div class="help-text">Global model name aliases. The <code>model</code> field in requests is looked up here first before routing. Useful for switching models without changing client config.</div>
         <div class="form-card">
             <div id="alias-entries"></div>
             <button type="button" class="add-btn" onclick="addAliasEntry()">+ Add Alias</button>
@@ -1409,6 +1415,7 @@ body {
     <!-- Logging -->
     <div class="section">
         <div class="section-title">Logging</div>
+        <div class="help-text">Log level and output destination. Changes to logging require a restart to take effect.</div>
         <div class="form-card">
             <div class="form-row">
                 <div class="form-group">
@@ -1438,6 +1445,7 @@ body {
     <!-- Cache -->
     <div class="section">
         <div class="section-title">Cache</div>
+        <div class="help-text">Cache identical requests to reduce latency and API costs. Cache is cleared on every config save.</div>
         <div class="form-card">
             <div class="toggle-row form-group">
                 <input type="checkbox" id="cache-enabled">
@@ -1447,6 +1455,7 @@ body {
                 <div class="form-group">
                     <label>TTL (seconds)</label>
                     <input type="number" id="cache-ttl" min="0">
+                    <div class="help-text">0 = never expire.</div>
                 </div>
                 <div class="form-group">
                     <label>Max Entries</label>
@@ -1457,10 +1466,12 @@ body {
                 <div class="form-group">
                     <label>Aliases</label>
                     <div class="tag-list" id="cache-aliases"></div>
+                    <div class="help-text">Only cache these aliases. Empty = allow all.</div>
                 </div>
                 <div class="form-group">
                     <label>Key Fields</label>
                     <div class="tag-list" id="cache-key-fields"></div>
+                    <div class="help-text">Extra cache key fields. <code>messages</code> is always included.</div>
                 </div>
             </div>
         </div>
@@ -1539,11 +1550,11 @@ function addModelEntry(data) {
             '<div class="form-group"><label>Anthropic Base URL</label><input type="text" class="model-anthropic" value="' + (data.anthropic_base_url || '') + '"></div>' +
         '</div>' +
         '<div class="form-row">' +
-            '<div class="form-group"><label>API Key</label><input type="password" class="model-key" value="' + (data.api_key || '') + '"></div>' +
-            '<div class="form-group" style="flex:0.5"><label>Max Tokens</label><input type="number" class="model-max-tokens" value="' + (data.max_tokens || '') + '" min="1"></div>' +
+            '<div class="form-group"><label>API Key</label><input type="text" class="model-key" value="' + (data.api_key || '') + '"></div>' +
+            '<div class="form-group" style="flex:0.5"><label>Max Tokens</label><input type="number" class="model-max-tokens" value="' + (data.max_tokens || '') + '" min="1"><div class="help-text" style="margin-bottom:0">Default when client omits it</div></div>' +
             '<div class="form-group toggle-row" style="flex:0.5;align-self:flex-end;padding-bottom:4px">' +
                 '<input type="checkbox" class="model-r2c" ' + (data.responses_to_chat ? 'checked' : '') + '>' +
-                '<label style="text-transform:none">R→C</label>' +
+                '<label style="text-transform:none">R→C <span style="font-weight:400;color:#999;font-size:0.72rem;text-transform:none">Responses→Chat</span></label>' +
             '</div>' +
         '</div>';
     document.getElementById('model-entries').appendChild(div);
