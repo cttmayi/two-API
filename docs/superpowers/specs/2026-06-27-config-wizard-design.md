@@ -1,118 +1,117 @@
-# Config Configuration Wizard
+# Config 配置引导
 
-Web-based configuration page built into two-API dashboard for editing all settings via a structured form, with save + hot-reload.
+在 two-API dashboard 中内置一个 Web 配置页面，通过结构化表单编辑所有配置项，保存后热加载生效。
 
-## Architecture
+## 架构
 
 ```
 Browser ──GET /──→ FastAPI dashboard HTML
-         ──GET /settings──→ Settings page (HTML + JS)
+         ──GET /settings──→ 配置页面（HTML + JS）
                 │
-                ├── GET  /api/config  → JSON (current config)
-                └── POST /api/config  → JSON (new config)
+                ├── GET  /api/config  → JSON（当前配置）
+                └── POST /api/config  → JSON（新配置）
                         │
-                        ├── Validate with Pydantic
-                        ├── Write YAML to ~/.two-api/config.yaml
-                        └── Hot-reload:
+                        ├── Pydantic 校验
+                        ├── 写入 YAML 到 ~/.two-api/config.yaml
+                        └── 热加载：
                             ├── app.state.config = new_config
                             ├── app.state.router = ModelRouter(...)
                             └── init_cache(CacheConfig(...))
 ```
 
-## API Layer
+## API 层
 
 ### GET /api/config
 
-Returns the current config serialized as JSON. `api_key` values are masked (e.g., `sk-****`) to avoid exposing secrets in the browser.
+返回当前配置的 JSON 序列化。`api_key` 做遮盖处理（如 `sk-****`），避免在浏览器中暴露密钥。
 
 ### POST /api/config
 
-Receives config JSON, validates with Pydantic `Config` model. On validation failure, returns `422` with error details. On success:
-1. Serialize to YAML and write to `~/.two-api/config.yaml`
-2. Update `app.state.config`
-3. Rebuild router: `app.state.router = ModelRouter(new_config.models)`
-4. Reinitialize cache: `init_cache(CacheConfig(...))` (clears old cache)
-5. Logging config unchanged (no hot-reload for logging)
-6. Return `{ "status": "ok" }`
+接收配置 JSON，使用 Pydantic `Config` 模型校验。校验失败返回 `422` + 错误详情。校验通过：
 
-API key handling:
-- `GET /api/config` returns masked keys (`sk-****`, first 3 chars preserved)
-- `POST /api/config`: if key is the masked value, preserve the original key from current config; if key is a new value, use it
+1. 序列化为 YAML 写入 `~/.two-api/config.yaml`
+2. 更新 `app.state.config`
+3. 重建 router：`app.state.router = ModelRouter(new_config.models)`
+4. 重新初始化 cache：`init_cache(CacheConfig(...))`（清空旧缓存）
+5. 日志配置不热加载（需重启生效）
+6. 返回 `{ "status": "ok" }`
 
-## Frontend
+API key 处理逻辑：
+- `GET /api/config` 返回遮盖后的 key（保留前 3 个字符，如 `sk-****`）
+- `POST /api/config`：如果 key 字段值是遮盖后的字符串，则保留当前配置中的原值；如果是新值，则使用新值
 
-### Navigation
+## 前端
 
-Both `/` and `/settings` pages share a nav bar with "Dashboard" and "Settings" links. Clicking navigates via standard `<a>` links (full page load).
+### 导航
 
-### Form Sections (all on one scrollable page)
+`/` 和 `/settings` 页面共享导航栏，包含 "Dashboard" 和 "Settings" 链接。通过标准的 `<a>` 链接切换（整页加载）。
 
-**Server:**
-- host: text input
-- port: number input
+### 表单分区（同一页面滚动浏览）
 
-**Models** (dynamic list, can add/remove entries):
-Each model entry:
-- `names`: editable list of strings + alias mappings (tag-like input, add/remove)
-- `openai_base_url`: text input
-- `anthropic_base_url`: text input
-- `api_key`: text input (password maskable)
-- `max_tokens`: number input, optional
-- `responses_to_chat`: toggle switch
+**Server：**
+- host：文本输入框
+- port：数字输入框
 
-Add model button appends a new empty row. Remove button deletes a row.
+**Models（动态列表，可增删行）：**
+每行包含：
+- `names`：可编辑的字符串列表 + 别名映射（标签式输入，可增删）
+- `openai_base_url`：文本输入框
+- `anthropic_base_url`：文本输入框
+- `api_key`：文本输入框（可切换密码模式）
+- `max_tokens`：数字输入框，可选
+- `responses_to_chat`：开关
 
-**Alias** (key-value pairs, dynamic list):
-- Each row: key input + value input
-- Add/remove buttons
+底部有 "Add Model" 按钮追加空行，每行有删除按钮。
 
-**Logging:**
-- level: dropdown (DEBUG, INFO, WARNING, ERROR)
-- output: dropdown (file, console)
-- dir: text input
+**Alias（键值对列表，动态增删）：**
+- 每行：key 输入框 + value 输入框
+- 增删按钮
 
-**Cache:**
-- enabled: toggle switch
-- ttl_seconds: number input
-- max_entries: number input
-- aliases: tag-like input list
-- key_fields: tag-like input list
+**Logging：**
+- level：下拉框（DEBUG、INFO、WARNING、ERROR）
+- output：下拉框（file、console）
+- dir：文本输入框
 
-### Actions
+**Cache：**
+- enabled：开关
+- ttl_seconds：数字输入框
+- max_entries：数字输入框
+- aliases：标签式输入列表
+- key_fields：标签式输入列表
 
-- **Save**: collects all form data, POSTs to `/api/config`, shows success/error toast. On success, optionally redirects to dashboard.
-- **Cancel**: resets form to last saved state (re-fetches GET /api/config).
+### 操作按钮
 
-### Validation (client-side, pre-submit)
+- **Save**：收集表单数据，POST 到 `/api/config`，显示成功/失败提示。成功后可选跳转到 dashboard。
+- **Cancel**：重置表单到上次保存的状态（重新请求 GET /api/config）。
 
-- Port must be 1-65535
-- At least one model entry required
-- Each model entry must have at least one name and one base URL
-- Alias keys cannot be empty
-- Logging level must be valid
+### 客户端校验（提交前）
 
-## Hot-Reload Behavior
+- Port 必须在 1-65535 之间
+- 至少需要一个 model 条目
+- 每个 model 条目必须至少有一个 name 和一个 base URL
+- Alias 的 key 不能为空
+- Logging level 必须是有效值
 
-- Router and cache are updated immediately for subsequent requests
-- In-flight requests continue using old config (no disruption)
-- Cache is cleared on config change (TTL/alias rules may have changed)
-- Logging config changes require a restart (not hot-reloadable)
+## 热加载行为
 
-## Files Changed
+- Router 和 cache 立即更新，后续请求使用新配置
+- 正在处理中的请求不受影响（继续使用旧配置）
+- Cache 在配置变更时清空（TTL/alias 规则可能已变化）
+- 日志配置变更需要重启（不支持热加载）
 
-| File | Change |
-|------|--------|
-| `src/main.py` | Add `/api/config` GET/POST endpoints, `/settings` page, navigation tabs on both pages |
-| `pyproject.toml` | Add `pyyaml` if not already present (for YAML serialization in POST handler) |
+## 涉及文件
 
-Note: `src/config.py` already has `Config.model_dump()` for serialization; PyYAML is already a dependency for loading, `yaml.dump()` is available for writing.
+| 文件 | 变更 |
+|------|------|
+| `src/main.py` | 新增 `/api/config` GET/POST 端点、`/settings` 页面、两个页面的导航栏 |
+| `pyproject.toml` | 无变更（PyYAML 已经是依赖） |
 
-## Testing
+## 测试
 
-- `GET /api/config` returns valid JSON matching current config structure
-- `POST /api/config` with valid data writes file and updates app state
-- `POST /api/config` with invalid data returns 422
-- API key masking round-trips correctly (masked key in POST preserves original)
-- Navigation tabs appear on both pages
-- Model add/remove rows work on client side
-- Cache hot-reload clears old entries
+- `GET /api/config` 返回有效 JSON，结构匹配当前配置
+- `POST /api/config` 合法数据写入文件并更新 app state
+- `POST /api/config` 非法数据返回 422
+- API key 遮盖后提交能正确保留原值
+- 导航栏在两个页面都正确显示
+- 前端模型行增删功能正常
+- Cache 热加载清空旧缓存
