@@ -8,32 +8,12 @@ from pathlib import Path
 
 TZ = timezone(timedelta(hours=8))
 
-MAX_TEXT_LEN = 500
-
-
 def _truncate_content(obj):
-    """Truncate long text fields in content blocks to avoid storing huge payloads."""
-    if isinstance(obj, dict):
-        truncated = {}
-        for k, v in obj.items():
-            if k in ("text", "content", "name", "arguments", "partial_json",
-                     "input", "_input_json", "thinking", "signature"):
-                truncated[k] = _truncate_text(v)
-            else:
-                truncated[k] = _truncate_content(v)
-        return truncated
-    if isinstance(obj, list):
-        return [_truncate_content(item) for item in obj]
+    """Return obj as-is, no truncation."""
     return obj
 
 
 def _truncate_text(v):
-    if isinstance(v, str) and len(v) > MAX_TEXT_LEN:
-        return v[:MAX_TEXT_LEN] + "...[truncated]"
-    if isinstance(v, dict):
-        return _truncate_content(v)
-    if isinstance(v, list):
-        return [_truncate_content(item) for item in v]
     return v
 
 
