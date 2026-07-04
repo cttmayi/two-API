@@ -89,7 +89,7 @@ def test_responses_codex_request_converts_to_chat_compatible_request():
             {"role": "user", "content": "hello"},
             {
                 "role": "assistant",
-                "content": "",
+                "content": None,
                 "tool_calls": [{
                     "id": "call_123",
                     "type": "function",

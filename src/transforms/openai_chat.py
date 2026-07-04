@@ -67,9 +67,11 @@ def messages_to_dicts(messages: list[Message]) -> list[dict]:
 
 
 def _message_from_ir(message: Message) -> dict:
-    item = {"role": message.role, "content": message.content}
     if message.tool_calls is not None:
-        item["tool_calls"] = message.tool_calls
+        item = {"role": message.role, "tool_calls": message.tool_calls}
+        item["content"] = message.content if message.content else None
+    else:
+        item = {"role": message.role, "content": message.content}
     if message.tool_call_id is not None:
         item["tool_call_id"] = message.tool_call_id
     return item

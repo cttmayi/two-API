@@ -1,3 +1,5 @@
+import json
+
 from .ir import Message, RequestIR, ResponseIR, StreamEventIR
 
 
@@ -11,18 +13,26 @@ def responses_request_to_ir(body: dict) -> RequestIR:
     elif isinstance(input_value, list):
         for item in input_value:
             if item.get("type") == "function_call":
-                messages.append(Message(role="assistant", content="", tool_calls=[_chat_tool_call(item)]))
+                tool_call = _chat_tool_call(item)
+                if messages and messages[-1].role == "assistant" and messages[-1].tool_calls is not None:
+                    messages[-1].tool_calls.append(tool_call)
+                else:
+                    messages.append(Message(role="assistant", content="", tool_calls=[tool_call]))
                 continue
             if item.get("type") == "function_call_output":
-                messages.append(Message(role="tool", content=item.get("output", ""), tool_call_id=item.get("call_id")))
+                messages.append(Message(role="tool", content=item.get("output") or "", tool_call_id=item.get("call_id")))
                 continue
             role = _chat_role(item.get("role", "user"))
             content = item.get("content", "")
+            tool_calls = item.get("tool_calls")
             if isinstance(content, list):
+                extracted_tool_calls, content = _extract_tool_calls(content)
+                if extracted_tool_calls:
+                    tool_calls = (tool_calls or []) + extracted_tool_calls
                 content = _flatten_content_blocks(content)
-            if _is_empty_content(content):
+            if _is_empty_content(content) and not tool_calls:
                 continue
-            messages.append(Message(role=role, content=content))
+            messages.append(Message(role=role, content=content, tool_calls=tool_calls))
     else:
         messages.append(Message(role="user", content=input_value))
     return RequestIR(
@@ -78,6 +88,25 @@ def _chat_tool_call(item: dict) -> dict:
             "arguments": item.get("arguments", ""),
         },
     }
+
+
+def _extract_tool_calls(content: list) -> tuple[list[dict], list]:
+    """Extract tool_use content blocks and convert to Chat Completions tool_calls format."""
+    tool_calls = []
+    filtered = []
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "tool_use":
+            tool_calls.append({
+                "id": block.get("id"),
+                "type": "function",
+                "function": {
+                    "name": block.get("name", ""),
+                    "arguments": json.dumps(block.get("input", {}), ensure_ascii=False),
+                },
+            })
+        else:
+            filtered.append(block)
+    return tool_calls, filtered
 
 
 def responses_stream_event_from_ir(event: StreamEventIR) -> tuple[str, dict] | None:

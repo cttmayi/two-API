@@ -379,7 +379,11 @@ def _responses_to_chat_streaming_response(
             yield _sse_event(*created_event)
         async with client.stream(method=request.method, url=url, headers=req_headers, content=chat_body_bytes) as resp:
             status_code = resp.status_code
+            raw_body = bytearray()
             async for chunk in resp.aiter_bytes():
+                if status_code != 200:
+                    raw_body.extend(chunk)
+                    continue
                 partial += chunk.decode("utf-8", errors="replace")
                 while "\n" in partial:
                     line, partial = partial.split("\n", 1)
@@ -435,7 +439,8 @@ def _responses_to_chat_streaming_response(
                         yield _sse_event(*event)
         prompt_tokens, completion_tokens, cache_read_tokens, output_content = _chat_stream_stats(sse_lines, status_code)
         if status_code != 200 and not output_content:
-            output_content = {
+            error_text = raw_body.decode("utf-8", errors="replace").strip() if raw_body else ""
+            output_content = error_text or {
                 "backend_status": status_code,
                 "backend_error": "empty response body",
                 "converted_request": chat_body,
