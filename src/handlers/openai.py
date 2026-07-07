@@ -440,6 +440,8 @@ def _responses_to_chat_streaming_response(
         prompt_tokens, completion_tokens, cache_read_tokens, output_content = _chat_stream_stats(sse_lines, status_code)
         if status_code != 200 and not output_content:
             error_text = raw_body.decode("utf-8", errors="replace").strip() if raw_body else ""
+            if error_text:
+                logger.error("responses_to_chat_backend_error", status=status_code, error=error_text, chat_body=chat_body)
             output_content = error_text or {
                 "backend_status": status_code,
                 "backend_error": "empty response body",
@@ -647,6 +649,7 @@ async def responses(request: Request):
                     resp = JSONResponse(status_code=502, content={"error": "Unable to convert chat response"})
             else:
                 error_body = resp.body.decode("utf-8", errors="replace")
+                logger.error("responses_to_chat_backend_error", status=resp.status_code, error=error_body, chat_body=chat_body)
                 output_content = error_body or {
                     "backend_status": resp.status_code,
                     "backend_error": "empty response body",

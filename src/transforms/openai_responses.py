@@ -14,7 +14,9 @@ def responses_request_to_ir(body: dict) -> RequestIR:
         for item in input_value:
             if item.get("type") == "function_call":
                 tool_call = _chat_tool_call(item)
-                if messages and messages[-1].role == "assistant" and messages[-1].tool_calls is not None:
+                if messages and messages[-1].role == "assistant":
+                    if messages[-1].tool_calls is None:
+                        messages[-1].tool_calls = []
                     messages[-1].tool_calls.append(tool_call)
                 else:
                     messages.append(Message(role="assistant", content="", tool_calls=[tool_call]))
